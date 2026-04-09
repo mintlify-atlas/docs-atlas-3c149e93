@@ -1,0 +1,406 @@
+---
+title: "CLI Reference"
+description: "Complete reference for all capa command-line flags, arguments, and usage examples."
+---
+
+## Synopsis
+
+```bash
+capa [options] sample
+```
+
+`sample` is the path to the file you want to analyze — a PE binary, ELF file, shellcode, .NET module, or sandbox report. capa auto-detects the file type by default.
+
+---
+
+## Input / output arguments
+
+### `sample` (positional)
+
+| Attribute | Value |
+|-----------|-------|
+| Required | Yes |
+| Type | `string` (file path) |
+
+Path to the file to analyze. This can be a static binary (PE, ELF, .NET, shellcode), a previously frozen capa result, a BinExport2 file, or a dynamic sandbox report (CAPE, DRAKVUF, VMRay).
+
+```bash
+capa suspicious.exe
+capa /path/to/report.json
+```
+
+---
+
+### `-f` / `--format`
+
+| Attribute | Value |
+|-----------|-------|
+| Default | `auto` |
+| Type | `string` (choice) |
+
+Override the input file format. By default, capa detects the format automatically. Use this flag when auto-detection fails or to explicitly specify shellcode formats.
+
+| Value | Description |
+|-------|-------------|
+| `auto` | Detect file type automatically (default) |
+| `pe` | Windows PE file |
+| `dotnet` | .NET PE file |
+| `elf` | Executable and Linkable Format |
+| `sc32` | 32-bit shellcode |
+| `sc64` | 64-bit shellcode |
+| `cape` | CAPE sandbox report |
+| `drakvuf` | DRAKVUF sandbox report |
+| `vmray` | VMRay sandbox report |
+| `freeze` | Features previously frozen by capa |
+| `binexport2` | BinExport2 file |
+| `binja-db` | Binary Ninja database |
+
+```bash
+# Analyze 32-bit shellcode
+capa -f sc32 shellcode.bin
+
+# Analyze a CAPE sandbox report
+capa -f cape report.json
+```
+
+---
+
+### `-j` / `--json`
+
+| Attribute | Value |
+|-----------|-------|
+| Default | `false` |
+| Type | flag |
+
+Emit results as JSON instead of the default text table output. The JSON output includes the full result document — metadata, matched rules, and feature locations. Use this for machine-readable output, pipelines, and the capa Explorer Web UI.
+
+```bash
+capa -j suspicious.exe > results.json
+capa -j suspicious.exe | jq '.rules | keys'
+```
+
+---
+
+### `-v` / `--verbose`
+
+| Attribute | Value |
+|-----------|-------|
+| Default | `false` |
+| Type | flag |
+
+Enable verbose output. Shows all rule matches, including sub-rule matches that the default view hides. For each rule, shows the namespace, description, scope, and the virtual addresses (or process/thread IDs) where the rule matched.
+
+```bash
+capa -v suspicious.exe
+```
+
+---
+
+### `-vv` / `--vverbose`
+
+| Attribute | Value |
+|-----------|-------|
+| Default | `false` |
+| Type | flag |
+
+Enable very verbose output. Shows everything in `-v` plus the full feature match logic for each rule — how each condition was satisfied, with the specific feature type and matched value at each location.
+
+```bash
+capa -vv suspicious.exe
+```
+
+<Note>
+`-v` and `-vv` have no effect when used together with `--json`. JSON output always contains the full result document.
+</Note>
+
+---
+
+### `--color`
+
+| Attribute | Value |
+|-----------|-------|
+| Default | `auto` |
+| Type | `string` (choice: `auto`, `always`, `never`) |
+
+Control ANSI color output in terminal results.
+
+| Value | Behavior |
+|-------|----------|
+| `auto` | Enable color only during an interactive terminal session (default) |
+| `always` | Always emit ANSI color codes |
+| `never` | Strip all ANSI color codes |
+
+```bash
+capa --color never suspicious.exe
+capa --color always suspicious.exe | less -R
+```
+
+---
+
+## Analysis options
+
+### `-r` / `--rules`
+
+| Attribute | Value |
+|-----------|-------|
+| Default | Embedded rules |
+| Type | `string` (path, repeatable) |
+
+Path to a rule file or directory of rules. By default, capa uses the embedded rule set from the capa-rules repository. Use this flag to load your own rules or to supplement the embedded set. The flag can be specified multiple times to load rules from multiple locations.
+
+```bash
+# Use rules from a local directory
+capa -r ./my-rules/ suspicious.exe
+
+# Use multiple rule directories
+capa -r ./rules/ -r ./custom-rules/ suspicious.exe
+```
+
+<Tip>
+Download the official rule set from [mandiant/capa-rules](https://github.com/mandiant/capa-rules/releases) and keep the rules version in sync with your capa version.
+</Tip>
+
+---
+
+### `-b` / `--backend`
+
+| Attribute | Value |
+|-----------|-------|
+| Default | `auto` |
+| Type | `string` (choice) |
+
+Select the analysis backend. By default, capa automatically picks the appropriate backend based on the input format.
+
+| Value | Description |
+|-------|-------------|
+| `auto` | Detect appropriate backend automatically (default) |
+| `viv` | Vivisect |
+| `ida` | IDA Pro via idalib |
+| `pefile` | pefile (file-level features only, no code analysis) |
+| `binja` | Binary Ninja |
+| `dotnet` | .NET (dnfile) |
+| `binexport2` | BinExport2 |
+| `ghidra` | Ghidra |
+| `freeze` | capa freeze |
+| `cape` | CAPE |
+| `drakvuf` | DRAKVUF |
+| `vmray` | VMRay |
+
+```bash
+capa -b viv suspicious.exe
+capa -b pefile suspicious.exe   # fast, file-scope rules only
+```
+
+---
+
+### `--os`
+
+| Attribute | Value |
+|-----------|-------|
+| Default | `auto` |
+| Type | `string` (choice: `auto`, `linux`, `macos`, `windows`) |
+
+Override the target operating system. capa detects the OS automatically from the binary. Use this flag when detection is wrong or when analyzing shellcode with no embedded OS hints.
+
+```bash
+capa --os linux suspicious.elf
+capa --os windows shellcode.bin -f sc32
+```
+
+---
+
+### `-s` / `--signatures`
+
+| Attribute | Value |
+|-----------|-------|
+| Default | Embedded signatures |
+| Type | `string` (path) |
+
+Path to a `.sig` or `.pat` file, or a directory containing such files, used to identify library functions. Library function matching helps capa skip known benign code and focus on custom logic. Only applies to the Vivisect backend analyzing PE files.
+
+```bash
+capa -s /path/to/my-sigs/ suspicious.exe
+```
+
+---
+
+### `-t` / `--tag`
+
+| Attribute | Value |
+|-----------|-------|
+| Default | None (run all rules) |
+| Type | `string` |
+
+Filter rules by any rule metadata field value. The filter matches against any `rule.meta.*` field, including `name`, `namespace`, `authors`, `att&ck`, `mbc`, and others. Only rules whose metadata contains the given string are run.
+
+```bash
+# Run only rules in the "communication" namespace
+capa -t communication suspicious.exe
+
+# Run only rules authored by a specific analyst
+capa -t william.ballenthin@mandiant.com suspicious.exe
+
+# Run only rules matching a specific technique name
+capa -t "create TCP socket" suspicious.exe
+```
+
+---
+
+### `--restrict-to-functions`
+
+| Attribute | Value |
+|-----------|-------|
+| Default | `[]` (analyze all functions) |
+| Type | Comma-separated list of hex or decimal virtual addresses |
+
+Analyze only the specified functions (static analysis only). Provide a comma-separated list of virtual addresses. Useful for investigating the capabilities of a single large or complex function without waiting for a full binary scan.
+
+```bash
+capa suspicious.exe --restrict-to-functions 0x4019C0,0x401CD0
+capa suspicious.exe --restrict-to-functions 0x4019C0 -v
+```
+
+<Warning>
+Cannot be combined with `--restrict-to-processes`. Use `--restrict-to-functions` for static analysis and `--restrict-to-processes` for dynamic/sandbox analysis.
+</Warning>
+
+---
+
+### `--restrict-to-processes`
+
+| Attribute | Value |
+|-----------|-------|
+| Default | `[]` (analyze all processes) |
+| Type | Comma-separated list of process IDs (PIDs) |
+
+Analyze only the specified processes (dynamic analysis only). Provide a comma-separated list of PIDs from the sandbox-generated process tree. Useful for filtering noise from benign system processes in sandbox reports.
+
+```bash
+capa report.json --restrict-to-processes 3888,3214
+capa report.json --restrict-to-processes 1234 -v
+```
+
+---
+
+## Verbosity / logging
+
+### `-d` / `--debug`
+
+| Attribute | Value |
+|-----------|-------|
+| Default | `false` |
+| Type | flag |
+
+Enable debug logging on stderr. Shows detailed internal state, including rule loading, feature extraction progress, and backend selection decisions. Also restores the default Python exception handler so full stack traces are printed on errors.
+
+```bash
+capa -d suspicious.exe
+```
+
+---
+
+### `-q` / `--quiet`
+
+| Attribute | Value |
+|-----------|-------|
+| Default | `false` |
+| Type | flag |
+
+Disable all output except errors. Suppresses progress indicators and informational messages. Useful when integrating capa into scripts where you only want to capture stderr on failure.
+
+```bash
+capa -q -j suspicious.exe > results.json
+```
+
+---
+
+### `--version`
+
+Print the capa version and exit.
+
+```bash
+capa --version
+```
+
+---
+
+## Common flag combinations
+
+<AccordionGroup>
+  <Accordion title="Scan a binary and emit JSON for a pipeline">
+    ```bash
+    capa -j suspicious.exe > results.json
+    cat results.json | jq '.rules | to_entries[] | .key'
+    ```
+  </Accordion>
+
+  <Accordion title="Verbose scan with a custom rule set">
+    ```bash
+    capa -r ./my-rules/ -v suspicious.exe
+    ```
+  </Accordion>
+
+  <Accordion title="Analyze shellcode with OS override">
+    ```bash
+    capa -f sc32 --os windows shellcode.bin
+    ```
+  </Accordion>
+
+  <Accordion title="Filter rules by namespace">
+    ```bash
+    capa -t "c2" suspicious.exe
+    ```
+  </Accordion>
+
+  <Accordion title="Analyze a sandbox report and restrict to malware PID">
+    ```bash
+    capa -f cape report.json --restrict-to-processes 1234
+    ```
+  </Accordion>
+
+  <Accordion title="Investigate a specific function in verbose mode">
+    ```bash
+    capa suspicious.exe --restrict-to-functions 0x401000 -v
+    ```
+  </Accordion>
+
+  <Accordion title="Quiet JSON output for scripting">
+    ```bash
+    capa -q -j suspicious.exe 2>/dev/null
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Exit codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Analysis completed successfully |
+| `10` | Missing rules |
+| `11` | Input file not found |
+| `12` | Invalid rule |
+| `13` | Corrupt or invalid input file |
+| `14` | File limitation (e.g., packed binary detected) |
+| `15` | Invalid signature file |
+| `16` | Unsupported file type |
+| `17` | Unsupported CPU architecture |
+| `18` | Unsupported operating system |
+| `19` | Unsupported IDA Pro version |
+| `20` | Unsupported Ghidra version |
+| `21` | Missing CAPE static analysis data |
+| `22` | Missing CAPE dynamic analysis data |
+| `23` | Empty sandbox report |
+| `24` | Unsupported Ghidra execution mode |
+| `25` | Invalid input format |
+| `26` | Invalid feature extractor |
+
+<CardGroup cols={2}>
+  <Card title="Output formats" icon="file-text" href="/usage/output-formats">
+    Understand the default, verbose, and JSON output modes
+  </Card>
+  <Card title="Tips and tricks" icon="lightbulb" href="/usage/tips-and-tricks">
+    Practical techniques for faster and more focused analysis
+  </Card>
+</CardGroup>

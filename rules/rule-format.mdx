@@ -1,0 +1,357 @@
+---
+title: "Rule format reference"
+description: "Complete reference for the capa rule YAML format, including all meta fields, feature types, and logic operators."
+keywords: ["capa rule format", "rule YAML", "rule syntax", "features reference", "meta fields", "scopes", "logic operators"]
+---
+
+This page is a complete reference for the capa rule format. All rules are YAML files with a single top-level `rule` key containing `meta` and `features` sections.
+
+## Full rule structure
+
+```yaml
+rule:
+  meta:
+    name: <string>                    # required — human-readable capability name
+    namespace: <string>               # required — slash-separated hierarchy path
+    authors:                          # list of author emails or handles
+      - author@example.com
+    scopes:                           # when and where the rule matches
+      static: function                # file | basic block | instruction | function
+      dynamic: call                   # process | thread | call
+    att&ck:                           # MITRE ATT&CK mappings
+      - Tactic::Technique [Txx]
+    mbc:                              # Malware Behavior Catalog mappings
+      - Category::Method [Code]
+    maec/analysis-conclusion: <string>
+    maec/malware-category: <string>
+    maec/malware-family: <string>
+    references:                       # external references
+      - https://...
+    examples:                         # known samples demonstrating the behavior
+      - <hash>:<address>
+  features:
+    - <feature or operator>
+```
+
+## Meta fields
+
+### `name` (required)
+
+A short, lowercase description of the behavior the rule detects. The name appears in capa's output as the capability label.
+
+```yaml
+name: create TCP socket
+```
+
+Rule names should start with a lowercase letter. The rule filename should match the rule name (with spaces replaced by hyphens).
+
+### `namespace` (required)
+
+A slash-separated path that places the rule in the capability hierarchy. Namespaces appear in capa's **NAMESPACE** column.
+
+```yaml
+namespace: communication/socket/tcp
+```
+
+Namespaces follow a general structure of `category/subcategory/behavior`. Common top-level namespaces include `c2`, `communication`, `data-manipulation`, `executable`, `host-interaction`, and `persistence`.
+
+### `authors`
+
+A list of author identifiers, typically email addresses or GitHub handles.
+
+```yaml
+authors:
+  - analyst@example.com
+  - @githubhandle
+```
+
+### `scopes`
+
+Defines where capa looks for the rule's features. Both `static` and `dynamic` keys are required. Set either to `unsupported` if the rule only applies to one analysis type.
+
+```yaml
+scopes:
+  static: function
+  dynamic: call
+```
+
+<Tabs>
+  <Tab title="Static scopes">
+    Used for disassembly-based (static) analysis:
+
+    | Value | Description |
+    |-------|-------------|
+    | `file` | The entire binary file |
+    | `function` | A single function |
+    | `basic block` | A single basic block |
+    | `instruction` | A single instruction |
+
+    Features available at each scope cascade upward: instruction features are available in basic block scope, basic block features are available in function scope.
+  </Tab>
+  <Tab title="Dynamic scopes">
+    Used for sandbox report (dynamic) analysis:
+
+    | Value | Description |
+    |-------|-------------|
+    | `process` | An entire process |
+    | `thread` | A single thread |
+    | `call` | A single API call |
+
+    Features available at each scope cascade upward: call features are available in thread scope, thread features are available in process scope.
+  </Tab>
+</Tabs>
+
+### `att&ck`
+
+A list of MITRE ATT&CK technique references. capa uses these to populate the ATT&CK table in its output.
+
+```yaml
+att&ck:
+  - Execution::Command and Scripting Interpreter::Windows Command Shell [T1059.003]
+  - Persistence::Create or Modify System Process::Windows Service [T1543.003]
+```
+
+The format is `Tactic::Technique [ID]` or `Tactic::Technique::Sub-technique [ID.subtechnique]`.
+
+### `mbc`
+
+A list of [Malware Behavior Catalog](https://github.com/MBCProject/mbc-markdown) behavior references.
+
+```yaml
+mbc:
+  - Communication::Socket Communication::Create TCP Socket [C0001.011]
+```
+
+### `maec/*`
+
+MAEC (Malware Attribute Enumeration and Characterization) metadata fields:
+
+```yaml
+maec/analysis-conclusion: malicious
+maec/malware-category: ransomware
+maec/malware-family: emotet
+```
+
+### `references`
+
+A list of external URLs providing context for the behavior.
+
+```yaml
+references:
+  - https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-socket
+  - https://attack.mitre.org/techniques/T1071/001/
+```
+
+### `examples`
+
+A list of known sample hashes (and optional addresses) that demonstrate the behavior. Used by the rule linter to validate that the rule matches correctly.
+
+```yaml
+examples:
+  - Practical Malware Analysis Lab 01-01.dll_:0x10001010
+  - 9324d1a8ae37a36ae560c37448c73a51:0x401000
+```
+
+The format is `<identifier>:<address>`. The address is optional and may be a hex offset into the file or a function address.
+
+## Features reference
+
+Features are the building blocks of rule logic. Each feature targets one observable property.
+
+| Feature | Syntax | Description |
+|---------|--------|-------------|
+| `api` | `api: kernel32.CreateProcess` | Windows API call (DLL.Function format) |
+| `string` | `string: "cmd.exe"` | Exact string constant |
+| `substring` | `substring: "http"` | Case-sensitive substring match |
+| `regex` | `regex: /https?:\/\//` | Regular expression match |
+| `bytes` | `bytes: 6A 40 68 00 30` | Hex byte sequence (up to 128 bytes) |
+| `number` | `number: 6 = IPPROTO_TCP` | Numeric constant (with optional label) |
+| `offset` | `offset: 0x100` | File offset |
+| `mnemonic` | `mnemonic: xor` | Assembly mnemonic |
+| `characteristic` | `characteristic: loop` | Predefined behavioral pattern |
+| `os` | `os: windows` | Target operating system |
+| `arch` | `arch: x86` | Target architecture |
+| `format` | `format: pe` | File format |
+| `property/read` | `property/read: System.Net.Sockets.TcpClient::Client` | .NET property getter |
+| `property/write` | `property/write: System.Net.WebClient::Proxy` | .NET property setter |
+| `class` | `class: System.Net.WebClient` | .NET class reference |
+| `namespace` | `namespace: System.Net` | .NET namespace reference |
+| `import` | `import: kernel32.VirtualAlloc` | PE import table entry |
+| `export` | `export: DllMain` | PE export table entry |
+| `section` | `section: .text` | PE section name |
+| `match` | `match: create TCP socket` | Match another rule by name or namespace |
+| `function-name` | `function-name: main` | Recognized function name |
+| `basic blocks` | `basic blocks: (2, )` | Number of basic blocks in a function |
+
+### Inline descriptions
+
+For `number`, `offset`, `bytes`, and similar numeric features, you can document the constant's meaning with an inline description using ` = `:
+
+```yaml
+- number: 6 = IPPROTO_TCP
+- number: 1 = SOCK_STREAM
+- number: 2 = AF_INET
+```
+
+The description appears in capa's verbose output to help analysts understand what the constant represents.
+
+### Scope-specific feature availability
+
+Not all features are available in every scope. The table below summarizes which scopes support each feature category:
+
+| Feature | file | function | basic block | instruction | process | thread | call |
+|---------|------|----------|-------------|-------------|---------|--------|------|
+| `os`, `arch`, `format` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `api` | | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `string` | ✓ | ✓ | ✓ | ✓ | | ✓ | ✓ |
+| `number` | | ✓ | ✓ | ✓ | | ✓ | ✓ |
+| `bytes` | | ✓ | ✓ | ✓ | | | |
+| `characteristic: loop` | | ✓ | | | | | |
+| `characteristic: tight loop` | | ✓ | ✓ | | | | |
+| `characteristic: stack string` | | ✓ | ✓ | | | | |
+| `characteristic: nzxor` | | ✓ | ✓ | ✓ | | | |
+| `import`, `export`, `section` | ✓ | | | | | | |
+| `property/read`, `property/write` | | ✓ | ✓ | ✓ | | | |
+
+<Note>
+  Feature availability cascades: features supported at instruction scope are also available at basic block scope, and basic block features are available at function scope. The same cascade applies to dynamic scopes: call features are available at thread scope and above.
+</Note>
+
+## Logic operators
+
+Features are combined with logic operators to express conditions.
+
+### `and`
+
+All child features must match.
+
+```yaml
+features:
+  - and:
+    - api: kernel32.CreateProcess
+    - string: "cmd.exe"
+```
+
+### `or`
+
+At least one child feature must match.
+
+```yaml
+features:
+  - or:
+    - api: kernel32.CreateProcessA
+    - api: kernel32.CreateProcessW
+    - api: kernel32.CreateProcessAsUserW
+```
+
+### `not`
+
+The child feature must not match.
+
+```yaml
+features:
+  - and:
+    - api: ws2_32.socket
+    - not:
+      - os: linux
+```
+
+### `optional`
+
+Child features may match, but are not required for the rule to fire. Use `optional` to capture supporting evidence that strengthens a match without requiring it.
+
+```yaml
+features:
+  - and:
+    - api: kernel32.CreateProcess
+    - optional:
+      - string: "cmd.exe"
+      - string: "/c "
+```
+
+### Operator nesting
+
+Operators can be nested to any depth to express complex logic:
+
+```yaml
+features:
+  - and:
+    - or:
+      - api: ws2_32.socket
+      - api: ws2_32.WSASocket
+    - or:
+      - and:
+        - number: 6 = IPPROTO_TCP
+        - number: 1 = SOCK_STREAM
+        - number: 2 = AF_INET
+      - and:
+        - number: 17 = IPPROTO_UDP
+        - number: 2 = SOCK_DGRAM
+```
+
+### Count qualifiers
+
+Use `/count` to match a feature a specific number of times. Ranges use `(min, max)` notation where either bound may be omitted for an open-ended range.
+
+```yaml
+features:
+  - and:
+    - api/count: kernel32.WriteFile (2, 10)   # between 2 and 10 times
+    - api/count: kernel32.ReadFile (1, )      # at least once
+    - api/count: kernel32.CloseHandle (, 5)   # at most 5 times
+```
+
+## Describing statements
+
+You can attach a `description` to any statement or feature to annotate it in verbose output:
+
+```yaml
+features:
+  - or:
+    - description: API functions that accept a pointer to a STARTUPINFO structure
+    - api: kernel32.CreateProcess
+    - api: kernel32.CreateProcessAsUserW
+```
+
+The description appears when you run capa with `-vv`.
+
+## Complete example
+
+The following rule demonstrates most format features:
+
+```yaml
+rule:
+  meta:
+    name: execute shell command and capture output
+    namespace: c2/shell
+    authors:
+      - matthew.williams@mandiant.com
+    scopes:
+      static: function
+      dynamic: process
+    att&ck:
+      - Execution::Command and Scripting Interpreter::Windows Command Shell [T1059.003]
+    references:
+      - https://docs.microsoft.com/en-us/windows/win32/api/processthreadsapi/ns-processthreadsapi-startupinfoa
+  features:
+    - and:
+      - match: create a process with modified I/O handles and window
+      - match: create pipe
+      - optional:
+        - match: create thread
+      - or:
+        - string: "cmd.exe"
+```
+
+This rule matches a function that creates a process with redirected I/O handles and creates a pipe — indicating shell command capture — and optionally spawns threads, with a string reference to `cmd.exe`.
+
+## Related pages
+
+<CardGroup cols={2}>
+  <Card title="Writing rules" icon="pencil" href="/rules/writing-rules">
+    Step-by-step guide to authoring a new rule from scratch
+  </Card>
+  <Card title="Rules overview" icon="book" href="/rules/overview">
+    How rules are organized, versioned, and loaded by capa
+  </Card>
+</CardGroup>

@@ -1,97 +1,107 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "capa — Identify Capabilities in Executables"
+description: "The FLARE team's open-source tool that automatically identifies capabilities in executable files for malware analysis and reverse engineering."
 ---
 
-## Setting up
+capa analyzes executable files and tells you what they can do. Point it at a PE, ELF, .NET module, shellcode file, or sandbox report, and it reports detected behaviors — mapped to MITRE ATT&CK and Malware Behavior Catalog (MBC) frameworks.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Download a standalone binary or install via pip in seconds
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Run your first analysis and understand the output
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="CLI Reference" icon="terminal" href="/usage/cli-reference">
+    Full reference for all commands, flags, and options
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="Writing Rules" icon="pencil" href="/rules/writing-rules">
+    Extend capa by authoring your own detection rules
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## What capa does
 
-Everything you need to create world-class documentation.
+Run capa against an unknown binary and it reports exactly what capabilities it detected — and where:
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+```
+$ capa suspicious.exe
 
-## Need inspiration?
++--------------------+------------------------------------------------------------------------+
+| ATT&CK Tactic      | ATT&CK Technique                                                       |
+|--------------------+------------------------------------------------------------------------|
+| DEFENSE EVASION    | Obfuscated Files or Information [T1027]                                |
+| DISCOVERY          | Query Registry [T1012]                                                 |
+|                    | System Information Discovery [T1082]                                   |
+| EXECUTION          | Command and Scripting Interpreter::Windows Command Shell [T1059.003]   |
+| PERSISTENCE        | Create or Modify System Process::Windows Service [T1543.003]           |
++--------------------+------------------------------------------------------------------------+
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
++-------------------------------------------+-------------------------------------------------+
+| CAPABILITY                                | NAMESPACE                                       |
+|-------------------------------------------+-------------------------------------------------|
+| execute shell command and capture output  | c2/shell                                        |
+| connect to HTTP server (3 matches)        | communication/http/client                       |
+| encode data using XOR (6 matches)         | data-manipulation/encoding/xor                  |
+| run as a service                          | executable/pe                                   |
+| create service                            | host-interaction/service/create                 |
++-------------------------------------------+-------------------------------------------------+
+```
+
+## Key features
+
+<CardGroup cols={2}>
+  <Card title="Multi-format support" icon="file-code">
+    Analyzes PE, ELF, .NET modules, shellcode (x86/x64), and dynamic sandbox reports
+  </Card>
+  <Card title="ATT&CK mapping" icon="shield">
+    Maps detected capabilities to MITRE ATT&CK techniques and MBC behaviors automatically
+  </Card>
+  <Card title="Multiple backends" icon="microchip">
+    Works with Vivisect, IDA Pro, Ghidra, Binary Ninja, and BinExport2
+  </Card>
+  <Card title="Dynamic analysis" icon="play">
+    Analyzes CAPE, DRAKVUF, and VMRay sandbox reports for runtime behavior
+  </Card>
+  <Card title="Extensible rules" icon="code">
+    Human-readable YAML rules — easy to write, easy to share
+  </Card>
+  <Card title="Web explorer" icon="globe" href="https://mandiant.github.io/capa/explorer/">
+    Interactively explore results in your browser — no install needed
+  </Card>
+</CardGroup>
+
+## Ways to use capa
+
+<CardGroup cols={2}>
+  <Card title="Standalone binary" icon="box" href="/installation">
+    Download and run with no installation required — just execute from the terminal
+  </Card>
+  <Card title="Python library" icon="python" href="/api/library-usage">
+    Integrate capa into your own tools via the `flare-capa` Python package
+  </Card>
+  <Card title="IDA Pro plugin" icon="plug" href="/backends/ida-plugin">
+    Run capa inside IDA Pro with the capa Explorer plugin
+  </Card>
+  <Card title="Ghidra plugin" icon="plug" href="/backends/ghidra-plugin">
+    Analyze binaries using Ghidra as the feature extraction backend
+  </Card>
+</CardGroup>
+
+## Analysis backends
+
+capa supports multiple backends for feature extraction:
+
+| Backend | Use case |
+|---------|----------|
+| Vivisect (default) | Static analysis of PE and ELF files |
+| IDA Pro | Interactive analysis via the capa Explorer plugin |
+| Ghidra | Open-source alternative to IDA using PyGhidra |
+| Binary Ninja | Analysis using the Binary Ninja engine |
+| BinExport2 | Cross-tool analysis via BinExport2 format |
+| CAPE / DRAKVUF / VMRay | Dynamic analysis from sandbox reports |
+| .NET (dnfile) | Analysis of .NET managed code |
+
+<Note>
+  capa is developed by the [Mandiant FLARE team](https://www.mandiant.com/resources/insights/flare). Rules are maintained in a separate [capa-rules repository](https://github.com/mandiant/capa-rules) — contributions welcome!
+</Note>

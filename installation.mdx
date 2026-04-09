@@ -1,0 +1,210 @@
+---
+title: "Installation"
+description: "Install capa as a standalone binary, a pip package, or from source."
+keywords: ["capa", "install", "pip", "flare-capa", "standalone binary", "source install"]
+---
+
+capa requires **Python >= 3.10** when installed as a library or from source. The standalone binary includes its own Python interpreter and has no prerequisites.
+
+Choose the method that fits your use case:
+
+- **Standalone binary** — download and run immediately, no Python required.
+- **pip install** — integrate capa into scripts or existing Python projects.
+- **From source** — modify capa or contribute to development.
+
+## Method 1: Standalone binary
+
+Download a pre-built binary from the [capa releases page](https://github.com/mandiant/capa/releases). These executables bundle the Python interpreter, all source code, and associated resources — no installation required. Run the binary directly from your terminal.
+
+<Tabs>
+  <Tab title="Linux">
+    Download the Linux binary from the [latest release](https://github.com/mandiant/capa/releases/latest).
+
+    ```bash
+    chmod +x capa
+    ./capa --help
+    ```
+
+    <Note>
+      The Linux standalone binary is built against GLIB 2.26. It works on distributions that provide GLIB >= 2.26, including Ubuntu >= 18, Debian >= 10, openSUSE >= 15.1, and CentOS >= 8. Older distributions may not be compatible.
+    </Note>
+  </Tab>
+  <Tab title="macOS">
+    Download the macOS binary from the [latest release](https://github.com/mandiant/capa/releases/latest).
+
+    ```bash
+    chmod +x capa
+    ./capa --help
+    ```
+
+    <Warning>
+      On macOS Catalina or later, Gatekeeper will block the binary on first execution. To approve it:
+
+      1. Run the binary once in the terminal — it will be blocked and a dialog will appear.
+      2. Open **System Preferences** → **Security & Privacy** → **General**.
+      3. Click **Allow Anyway** next to the capa entry.
+      4. Run the binary again to confirm the approval prompt.
+    </Warning>
+  </Tab>
+  <Tab title="Windows">
+    Download `capa.exe` from the [latest release](https://github.com/mandiant/capa/releases/latest).
+
+    ```powershell
+    .\capa.exe --help
+    ```
+
+    Run from a Command Prompt or PowerShell terminal. No installation or PATH configuration is required.
+  </Tab>
+</Tabs>
+
+## Method 2: pip install
+
+Install capa as a Python library using pip. This is the recommended approach when integrating capa into existing tooling or scripts.
+
+```bash
+pip install flare-capa
+```
+
+After installation, the `capa` command is available in your PATH.
+
+<Warning>
+  Installing via pip does **not** include the default rule set or library identification signatures. You must download rules separately and pass them with the `-r` flag.
+</Warning>
+
+**Download rules and run capa:**
+
+```bash
+wget https://github.com/mandiant/capa-rules/archive/refs/tags/v9.4.0.zip
+unzip v9.4.0.zip
+capa -r capa-rules-v9.4.0/ suspicious.exe
+```
+
+To also specify a custom signatures directory, use the `-s` flag:
+
+```bash
+capa -r /path/to/rules -s /path/to/sigs suspicious.exe
+```
+
+<Tip>
+  If you want rules bundled automatically, use Method 3 (from source) instead. Cloning with submodules pulls the `rules/` directory alongside the source.
+</Tip>
+
+## Method 3: From source
+
+Clone the repository and install in editable mode. This is the best option if you want to modify capa, write rules, or contribute patches.
+
+<Steps>
+  <Step title="Clone the repository">
+    Clone with submodules to also pull the rules and (optionally) test data:
+
+    <CodeGroup>
+
+    ```bash HTTPS (source + rules only)
+    git clone https://github.com/mandiant/capa.git /local/path/to/src
+    cd /local/path/to/src
+    git submodule update --init rules
+    ```
+
+    ```bash SSH (source + rules only)
+    git clone git@github.com:mandiant/capa.git /local/path/to/src
+    cd /local/path/to/src
+    git submodule update --init rules
+    ```
+
+    ```bash HTTPS (everything, including test malware samples)
+    git clone --recurse-submodules https://github.com/mandiant/capa.git /local/path/to/src
+    ```
+
+    </CodeGroup>
+
+    <Warning>
+      Using `--recurse-submodules` also clones the capa-testfiles repository, which contains real malware samples. Install to a directory excluded from your antivirus scanner if you use this option.
+    </Warning>
+  </Step>
+
+  <Step title="Create a virtual environment (recommended)">
+    Using a virtual environment avoids dependency conflicts with other Python projects on your system.
+
+    <CodeGroup>
+
+    ```bash Linux / macOS
+    python3 -m venv ../capa-env
+    source ../capa-env/bin/activate
+    ```
+
+    ```powershell Windows
+    python -m venv ..\capa-env
+    ..\capa-env\Scripts\activate.bat
+    ```
+
+    </CodeGroup>
+  </Step>
+
+  <Step title="Install capa in editable mode">
+    Install the source in editable mode so changes to the code are reflected immediately without reinstalling:
+
+    ```bash
+    pip install -e /local/path/to/src
+    ```
+
+    The `capa` executable in your PATH now runs directly from the cloned source directory.
+  </Step>
+</Steps>
+
+## Development setup
+
+If you are contributing to capa, install the development dependencies after completing the source installation above.
+
+**Install pinned development dependencies:**
+
+```bash
+pip install -r requirements.txt
+```
+
+**Install capa with development extras:**
+
+```bash
+pip install -e /local/path/to/src[dev]
+```
+
+To also install optional script dependencies:
+
+```bash
+pip install -e /local/path/to/src[dev,scripts]
+```
+
+**Set up pre-commit hooks:**
+
+capa uses [pre-commit](https://pre-commit.com/) to enforce consistent code style with `ruff` (linting and formatting) and `mypy` (type checking).
+
+```bash
+pre-commit install --hook-type=pre-commit
+pre-commit install --hook-type=pre-push
+```
+
+To run all linters manually:
+
+```bash
+pre-commit run --hook-stage=manual --all-files
+```
+
+To run a single linter:
+
+```bash
+pre-commit run --all-files --hook-stage=manual ruff
+```
+
+<Tip>
+  You can skip pre-commit checks temporarily with `git commit -n` (`--no-verify`), but this should not be used habitually — CI enforces the same checks.
+</Tip>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Run your first analysis and understand the output.
+  </Card>
+  <Card title="CLI reference" icon="terminal" href="/usage/cli-reference">
+    Full reference for all flags and options.
+  </Card>
+</CardGroup>

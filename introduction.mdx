@@ -1,0 +1,131 @@
+---
+title: "Introduction"
+description: "capa is the FLARE team's open-source CLI tool to automatically identify capabilities in executable files."
+keywords: ["capa", "FLARE", "malware analysis", "reverse engineering", "capability detection", "ATT&CK", "MBC"]
+---
+
+capa analyzes executable files and reports what they can do. Point it at a PE, ELF, .NET module, shellcode file, or sandbox report, and it tells you what behaviors the program exhibits — mapped to MITRE ATT&CK techniques and the Malware Behavior Catalog (MBC).
+
+For example, after running capa against an unknown binary, you might learn that the file can install a Windows service, decode data with XOR, and communicate over HTTP — enough to classify it as a likely backdoor and direct your next analysis steps.
+
+## Example output
+
+```
+$ capa suspicious.exe
+
++--------------------+------------------------------------------------------------------------+
+| ATT&CK Tactic      | ATT&CK Technique                                                       |
+|--------------------+------------------------------------------------------------------------|
+| DEFENSE EVASION    | Obfuscated Files or Information [T1027]                                |
+| DISCOVERY          | Query Registry [T1012]                                                 |
+|                    | System Information Discovery [T1082]                                   |
+| EXECUTION          | Command and Scripting Interpreter::Windows Command Shell [T1059.003]   |
+|                    | Shared Modules [T1129]                                                 |
+| EXFILTRATION       | Exfiltration Over C2 Channel [T1041]                                   |
+| PERSISTENCE        | Create or Modify System Process::Windows Service [T1543.003]           |
++--------------------+------------------------------------------------------------------------+
+
++-------------------------------------------+-------------------------------------------------+
+| CAPABILITY                                | NAMESPACE                                       |
+|-------------------------------------------+-------------------------------------------------|
+| read and send data from client to server  | c2/file-transfer                                |
+| execute shell command and capture output  | c2/shell                                        |
+| receive data (2 matches)                  | communication                                   |
+| send data (6 matches)                     | communication                                   |
+| connect to HTTP server (3 matches)        | communication/http/client                       |
+| send HTTP request (3 matches)             | communication/http/client                       |
+| create pipe                               | communication/named-pipe/create                 |
+| encode data using Base64                  | data-manipulation/encoding/base64               |
+| encode data using XOR (6 matches)         | data-manipulation/encoding/xor                  |
+| run as a service                          | executable/pe                                   |
+| read file                                 | host-interaction/file-system/read               |
+| write file (2 matches)                    | host-interaction/file-system/write              |
+| resolve DNS                               | host-interaction/network/dns/resolve            |
+| create process                            | host-interaction/process/create                 |
+| create service                            | host-interaction/service/create                 |
+| persist via Windows service               | persistence/service                             |
++-------------------------------------------+-------------------------------------------------+
+```
+
+In this output, capa ran against `suspicious.exe` and reported that the program can send HTTP requests, decode data via XOR and Base64, install services, and spawn new processes. Taken together, this suggests the binary could be a persistent backdoor — pointing you toward sandbox execution and C2 recovery as the next analysis steps.
+
+## Key features
+
+<CardGroup cols={2}>
+  <Card title="Multi-format support" icon="file-code">
+    Analyzes PE, ELF, .NET modules, x86/x64 shellcode, and dynamic sandbox reports from CAPE, DRAKVUF, and VMRay.
+  </Card>
+  <Card title="ATT&CK and MBC mapping" icon="shield">
+    Automatically maps detected capabilities to MITRE ATT&CK techniques and Malware Behavior Catalog (MBC) behaviors.
+  </Card>
+  <Card title="Multiple backends" icon="microchip">
+    Works with Vivisect (default), IDA Pro, Ghidra, Binary Ninja, and BinExport2 for feature extraction.
+  </Card>
+  <Card title="Dynamic analysis" icon="play">
+    Analyzes sandbox reports to detect runtime behavior that static analysis alone may miss in packed or obfuscated samples.
+  </Card>
+  <Card title="Extensible rules" icon="code">
+    Human-readable YAML rules that blend OpenIOC, YARA, and YAML syntax — easy to write and contribute.
+  </Card>
+  <Card title="Web explorer" icon="globe" href="https://mandiant.github.io/capa/explorer/">
+    Interactively explore capa results in your browser with no installation required.
+  </Card>
+</CardGroup>
+
+## Supported file types
+
+capa supports the following input formats:
+
+| Format | Notes |
+|--------|-------|
+| PE (`.exe`, `.dll`, `.sys`) | Windows executables and libraries |
+| ELF | Linux and other ELF-based executables |
+| .NET modules | Managed code analyzed via dnfile |
+| Shellcode (x86/x64) | Raw shellcode files |
+| CAPE reports (`.json`, `.json_`, `.json.gz`) | Dynamic sandbox output |
+| DRAKVUF reports (`.log`, `.log.gz`) | Dynamic sandbox output |
+| VMRay analysis archives (`.zip`) | Dynamic sandbox output |
+
+## Analysis backends
+
+capa uses pluggable backends to extract features from input files. The default backend is **Vivisect**, which works with no additional setup. Other backends require their host application to be installed:
+
+| Backend | Use case |
+|---------|----------|
+| Vivisect (default) | Static analysis of PE and ELF files |
+| IDA Pro | Interactive analysis via the capa Explorer plugin |
+| Ghidra | Open-source alternative using PyGhidra |
+| Binary Ninja | Analysis using the Binary Ninja engine |
+| BinExport2 | Cross-tool analysis via BinExport2 format |
+| CAPE / DRAKVUF / VMRay | Dynamic analysis from sandbox reports |
+| .NET (dnfile) | Static analysis of .NET managed code |
+
+See [Analysis Backends](/backends/overview) for setup instructions for each backend.
+
+## ATT&CK and MBC mapping
+
+Every capability that capa detects is mapped to one or both of:
+
+- **MITRE ATT&CK** — the industry-standard framework for adversary tactics and techniques. capa reports the tactic (e.g., `PERSISTENCE`) and technique (e.g., `Create or Modify System Process::Windows Service [T1543.003]`).
+- **Malware Behavior Catalog (MBC)** — a catalog of malware behaviors that complements ATT&CK with lower-level detail (e.g., `Communication::Socket Communication::Create TCP Socket [C0001.011]`).
+
+These mappings are defined in capa's rules, which are maintained in the [capa-rules repository](https://github.com/mandiant/capa-rules).
+
+## capa Explorer Web
+
+The [capa Explorer Web](https://mandiant.github.io/capa/explorer/) lets you interactively explore capa results in your browser. You can upload a capa JSON result file or load results directly from a URL. A standalone offline HTML file is also available for local use.
+
+<Note>
+  capa is developed and maintained by the [Mandiant FLARE team](https://www.mandiant.com/resources/insights/flare). Rules are maintained in a separate repository at [github.com/mandiant/capa-rules](https://github.com/mandiant/capa-rules) — contributions are welcome.
+</Note>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Download a standalone binary or install via pip.
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Run your first analysis and understand the output.
+  </Card>
+</CardGroup>

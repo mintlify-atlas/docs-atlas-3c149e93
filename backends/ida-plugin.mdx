@@ -1,0 +1,157 @@
+---
+title: "IDA Pro Plugin"
+description: "Use capa explorer — the IDAPython plugin — to identify capabilities and build new rules directly within IDA Pro."
+keywords: ["IDA Pro", "IDAPython", "capa explorer", "plugin", "rule generator", "FLIRT", "idalib"]
+---
+
+## Overview
+
+**capa explorer** is an IDAPython plugin that integrates capa with IDA Pro. It runs capa analysis against your open IDA database (IDB) without needing access to the original binary file, then presents the results in an interactive pane that lets you navigate directly to matched addresses and build new capa rules.
+
+capa explorer consists of two main components:
+
+- A **feature extractor** built on IDA's analysis engine that uses IDAPython to extract capa features — strings, disassembly, and control flow — from your IDB.
+- An **interactive user interface** for displaying capa rule matches and generating new rules from extracted features.
+
+## Installation
+
+<Steps>
+  <Step title="Install capa">
+    Install the `flare-capa` package using the Python interpreter that is configured for your IDA installation:
+
+    ```bash
+    pip install flare-capa
+    ```
+  </Step>
+  <Step title="Download the official capa rules">
+    Download and extract the [official capa rules](https://github.com/mandiant/capa-rules/releases) that match the version of capa you installed. You can check your installed version with:
+
+    ```bash
+    pip show flare-capa
+    # or
+    capa --version
+    ```
+  </Step>
+  <Step title="Copy the plugin file to your IDA plugins directory">
+    Copy `capa_explorer.py` to your IDA plugins directory.
+
+    Common plugin directory locations:
+    - **Windows:** `%APPDATA%\Hex-Rays\IDA Pro\plugins`
+    - **Linux / macOS:** `$HOME/.idapro/plugins`
+
+    You can find your configured plugin directories from the IDA console:
+
+    ```python
+    import idaapi; idaapi.get_ida_subdirs("plugins")
+    ```
+
+    The plugin file is available at:
+    ```
+    capa/ida/plugin/capa_explorer.py
+    ```
+  </Step>
+</Steps>
+
+## Requirements
+
+| Requirement | Minimum version |
+|-------------|----------------|
+| Python | 3.10 |
+| IDA Pro | 7.4 |
+
+Tested IDA Pro versions: 7.4, 7.5, 7.6 SP1, 7.7, 8.0, 8.1, 8.2, 9.0.
+
+<Note>
+capa explorer is limited to the Python version supported by your IDA installation, which may not include all Python versions ≥ 3.10.
+</Note>
+
+## Supported file types
+
+capa explorer supports the file types that capa itself supports:
+
+- Windows x86 (32-bit and 64-bit) PE files
+- Windows x86 (32-bit and 64-bit) shellcode
+- ELF files on various operating systems
+
+## Using capa explorer
+
+### Program Analysis tab
+
+<Steps>
+  <Step title="Open a file in IDA Pro">
+    Load and analyze a supported file. For best results, select **Manual Load** and **Load Resources** when prompted by IDA.
+  </Step>
+  <Step title="Launch capa explorer">
+    Open capa explorer via **Edit → Plugins → FLARE capa explorer**, or press `Alt+F5`.
+  </Step>
+  <Step title="Select the Program Analysis tab">
+    Click the **Program Analysis** tab in the capa explorer pane.
+  </Step>
+  <Step title="Run analysis">
+    Click the **Analyze** button. The first time you run, capa explorer will ask you to specify a local directory containing the capa rules you downloaded during installation. This setting is remembered for future sessions.
+  </Step>
+</Steps>
+
+### Navigating results
+
+Once analysis completes, the results pane shows matched rules organized by capability and namespace.
+
+| Action | How |
+|--------|-----|
+| Navigate to a matched address | Double-click the **Address** column |
+| Expand a rule match to see child features | Double-click a result in **Rule Information** |
+| Highlight a matched address in the Disassembly view | Select the checkbox in **Rule Information** |
+| View the source of a rule | Hover over a rule match |
+| Reset highlighting and UI state | Click **Reset** |
+| Update the rules directory or other settings | Click **Settings** |
+
+<Tip>
+capa explorer caches analysis results in the IDA database and reuses them across sessions. If you rename global variables that store dynamically resolved API addresses, click **Analyze** again — capa will use your annotations to improve its analysis.
+</Tip>
+
+### Rule Generator tab
+
+capa explorer includes a rule generator that lets you build new capa rules from features extracted from any function in your IDB.
+
+<Steps>
+  <Step title="Navigate to a function">
+    In IDA's Disassembly view, navigate to the function you want to describe with a rule.
+  </Step>
+  <Step title="Open the Rule Generator tab and analyze">
+    Click the **Rule Generator** tab in capa explorer, then click **Analyze**. The **Features** pane populates with all features capa extracted from the current function.
+  </Step>
+  <Step title="Add features to the editor">
+    Double-click a feature to add it to the **Editor** pane. To add multiple features at once, select them and right-click → **Add**.
+  </Step>
+  <Step title="Refine the rule">
+    Use the **Editor** pane to drag-and-drop features, construct statement hierarchies (`and`, `or`, `optional`), and right-click individual features for context-specific modifications. Use the **Preview** pane to edit raw rule YAML directly.
+  </Step>
+  <Step title="Save the rule">
+    Click **Save** to write the rule to a file.
+  </Step>
+</Steps>
+
+## FLIRT signatures
+
+When using the Vivisect backend, capa applies FLIRT signatures to identify library functions and exclude them from results. The IDA plugin uses IDA's own analysis, so library functions that IDA has already recognized are reflected in the extracted features.
+
+IDA uses your local `.idb` changes — including renamed global variables for dynamically resolved APIs — to produce better features than a cold static analysis.
+
+## Running capa via idalib (headless)
+
+In addition to the interactive plugin, capa can use IDA's **idalib** library to run headless analysis (without the IDA GUI). This is invoked with `--backend ida`:
+
+```bash
+capa --backend ida sample.exe
+```
+
+This requires IDA Pro and the idalib Python package to be installed. capa will open the database, run auto-analysis, wait for it to complete, and then extract features.
+
+<Note>
+Lumina is automatically disabled when running via idalib to avoid overwriting function names from debug info.
+</Note>
+
+## Related
+
+- [Backends Overview](/backends/overview)
+- [Writing Rules](/rules/writing-rules)

@@ -1,0 +1,347 @@
+---
+title: "Output formats"
+description: "Reference for all capa output modes — default tables, verbose, very verbose, and JSON — with examples and guidance on when to use each."
+---
+
+capa supports several output formats to suit different workflows, from quick triage at the terminal to automated pipelines and interactive exploration.
+
+| Format | Flag | Best for |
+|--------|------|----------|
+| Default (table) | _(none)_ | Quick triage, human reading |
+| Verbose | `-v` | Locating rule matches, rule development |
+| Very verbose | `-vv` | Understanding why a rule matched, feature inspection |
+| JSON | `-j` | Pipelines, tooling, capa Explorer Web |
+
+---
+
+## Default output
+
+Running capa without any format flags produces a compact, human-readable table view.
+
+```bash
+capa suspicious.exe
+```
+
+The default output renders five sections:
+
+### Metadata table
+
+Shows basic facts about the sample and analysis:
+
+```
++---------------------------+----------------------------------------------------------+
+| md5                       | 84882c9d43e23d63b82004fae74ebb61                         |
+| sha1                      | c6fb3b50d946bec6f391aefa4e54478cf8607211                 |
+| sha256                    | 5eced7367ed63354b4ed5c556e2363514293f614c2c2eb18...      |
+| analysis                  | static                                                   |
+| os                        | windows                                                  |
+| format                    | pe                                                       |
+| arch                      | amd64                                                    |
+| path                      | /tmp/suspicious.exe                                      |
++---------------------------+----------------------------------------------------------+
+```
+
+### ATT&CK table
+
+Maps detected capabilities to MITRE ATT&CK tactics and techniques:
+
+```
++------------------------+----------------------------------------------------------------------+
+| ATT&CK Tactic          | ATT&CK Technique                                                     |
+|------------------------+----------------------------------------------------------------------|
+| DEFENSE EVASION        | Obfuscated Files or Information [T1027]                              |
+| DISCOVERY              | Query Registry [T1012]                                               |
+|                        | System Information Discovery [T1082]                                 |
+| EXECUTION              | Command and Scripting Interpreter::Windows Command Shell [T1059.003] |
+| PERSISTENCE            | Create or Modify System Process::Windows Service [T1543.003]         |
++------------------------+----------------------------------------------------------------------+
+```
+
+### MAEC table
+
+If any matched rules include MAEC metadata (analysis conclusion, malware family, malware category), a MAEC table is shown:
+
+```
++--------------------------+-----------------------------------------------------------+
+| MAEC Category            | MAEC Value                                                |
+|--------------------------+-----------------------------------------------------------|
+| malware-category         | downloader                                                |
+| malware-family           | PlugX                                                     |
++--------------------------+-----------------------------------------------------------+
+```
+
+### MBC table
+
+Maps capabilities to Malware Behavior Catalog (MBC) objectives and behaviors:
+
+```
++--------------------------+------------------------------------------------------------+
+| MBC Objective            | MBC Behavior                                               |
+|--------------------------+------------------------------------------------------------|
+| ANTI-BEHAVIORAL ANALYSIS | Virtual Machine Detection::Instruction Testing [B0009.029] |
+| COMMUNICATION            | Interprocess Communication::Create Pipe [C0003.001]        |
++--------------------------+------------------------------------------------------------+
+```
+
+### Capabilities table
+
+Lists all matched capabilities and their capa rule namespace:
+
+```
++-------------------------------------------------------+-------------------------------------------------+
+| CAPABILITY                                            | NAMESPACE                                       |
+|-------------------------------------------------------+-------------------------------------------------|
+| check for OutputDebugString error (2 matches)         | anti-analysis/anti-debugging/debugger-detection |
+| read and send data from client to server              | c2/file-transfer                                |
+| encode data using XOR (6 matches)                     | data-manipulation/encoding/xor                  |
++-------------------------------------------------------+-------------------------------------------------+
+```
+
+<Note>
+The default output shows only **top-level** capabilities — rules that are not already implied by another matched rule. For example, if "persist via Run registry key" contains a match for "set registry value", only the top-level rule appears. Use `-v` to see all matched rules.
+</Note>
+
+---
+
+## Verbose output (`-v`)
+
+```bash
+capa -v suspicious.exe
+```
+
+Verbose mode shows all matched rules — including sub-rules that the default view hides. For each rule, the output includes:
+
+- Rule name and match count
+- Namespace
+- Description
+- Scope (function, basic block, process, thread, etc.)
+- Match locations — virtual addresses for static analysis, or process/thread/call identifiers for dynamic analysis
+
+```
+send data (2 matches)
+namespace    communication
+description  all known techniques for sending data to a potential C2 server
+scope        function
+matches      0x10004363
+             0x100046c9
+             0x1000454e
+             0x10003a13
+
+create TCP socket
+namespace    communication/socket/tcp/create
+scope        function
+matches      0x10004363
+```
+
+The metadata section in verbose mode is also expanded, including additional fields such as `timestamp`, `capa version`, `extractor`, `base address`, `function count`, `library function count`, and `total feature count`.
+
+**When to use `-v`:**
+- You want to see every rule that matched, not just top-level ones
+- You need the exact virtual addresses or process/thread IDs where a rule matched
+- You are developing or debugging rules and need match location feedback
+
+---
+
+## Very verbose output (`-vv`)
+
+```bash
+capa -vv suspicious.exe
+```
+
+Very verbose mode shows everything in `-v` plus the **full feature match logic** for each rule — the complete evaluation tree showing which conditions were satisfied and at which specific addresses or call sites.
+
+For each matched rule, under each match location, capa renders the rule's logic tree:
+
+```
+check for OutputDebugString error
+namespace  anti-analysis/anti-debugging/debugger-detection
+author     michael.hunhoff@mandiant.com
+scope      function
+function @ 0x10004706
+  and:
+    api: kernel32.SetLastError @ 0x100047C2
+    api: kernel32.GetLastError @ 0x10004A87
+    api: kernel32.OutputDebugString @ 0x10004767, 0x10004787, 0x10004816, 0x10004895
+```
+
+For dynamic analysis (sandbox reports), the match locations include full process/thread/call context:
+
+```
+enumerate processes
+namespace  host-interaction/process/list
+scope      process
+process @ malware.exe{pid:3888}
+  and:
+    api: CreateToolhelp32Snapshot(
+      dwFlags = TH32CS_SNAPPROCESS,
+      th32ProcessID = 0,
+    ) = 0x90 @ process{pid:3888}
+```
+
+**When to use `-vv`:**
+- You want to understand exactly why a rule did or did not match
+- You are writing or debugging a rule and need to inspect feature extraction results
+- You are doing deep analysis and need every extracted feature value visible
+
+---
+
+## JSON output (`-j`)
+
+```bash
+capa -j suspicious.exe
+capa -j suspicious.exe > results.json
+```
+
+JSON mode emits a machine-readable `ResultDocument` containing the full analysis. The JSON output is equivalent to the very verbose view in terms of data richness — it includes all metadata, all matched rules (regardless of whether they are top-level or sub-rules), all match locations, and the complete feature logic tree for every match.
+
+The top-level structure of the JSON output:
+
+```json
+{
+  "meta": {
+    "timestamp": "2024-01-15T10:23:00.123456",
+    "version": "7.0.0",
+    "argv": ["capa", "-j", "suspicious.exe"],
+    "sample": {
+      "md5": "84882c9d43e23d63b82004fae74ebb61",
+      "sha1": "c6fb3b50d946bec6f391aefa4e54478cf8607211",
+      "sha256": "5eced7367ed63354b4ed5c556e2363514293f614c2c2eb187273381b2ef5f0f9",
+      "path": "/tmp/suspicious.exe"
+    },
+    "flavor": "static",
+    "analysis": {
+      "format": "pe",
+      "arch": "amd64",
+      "os": "windows",
+      "extractor": "VivisectFeatureExtractor",
+      "rules": ["(embedded rules)"],
+      "base_address": { "type": "absolute", "value": 4198400 },
+      "layout": { "functions": [ ... ] },
+      "feature_counts": { "file": 142, "functions": [ ... ] },
+      "library_functions": [ ... ]
+    }
+  },
+  "rules": {
+    "check for OutputDebugString error": {
+      "meta": { ... },
+      "source": "...",
+      "matches": [ ... ]
+    }
+  }
+}
+```
+
+**Key fields:**
+
+| Field | Description |
+|-------|-------------|
+| `meta.sample` | MD5, SHA1, SHA256, and path of the analyzed file |
+| `meta.flavor` | `"static"` or `"dynamic"` analysis |
+| `meta.analysis` | Format, arch, OS, extractor, feature counts, function layout |
+| `rules` | Dictionary of matched rule names to rule metadata and match results |
+| `rules[name].matches` | List of `[address, match_tree]` pairs |
+
+**When to use `-j`:**
+- Processing capa output programmatically with tools like `jq`
+- Integrating capa into a pipeline or SOAR workflow
+- Uploading to [capa Explorer Web](https://mandiant.github.io/capa/explorer/) for interactive viewing
+- Storing results for later re-rendering with different verbosity settings
+
+<Tip>
+You can re-render a saved JSON result file at any verbosity level without re-running analysis:
+
+```bash
+# Save results
+capa -j suspicious.exe > results.json
+
+# Re-render at different verbosity levels
+capa results.json
+capa -v results.json
+capa -vv results.json
+```
+
+capa detects the `result` format automatically.
+</Tip>
+
+---
+
+## capa Explorer Web
+
+Upload a JSON output file to [capa Explorer Web](https://mandiant.github.io/capa/explorer/) for an interactive, browser-based view of capa results — no local install needed.
+
+Features of the web explorer include:
+
+- Filterable and searchable rule matches
+- Expandable ATT&CK and MBC mappings
+- Rule source viewer
+- Shareable via URL when loading from a public link (e.g., VirusTotal)
+
+```bash
+# Generate a JSON result file to upload
+capa -j suspicious.exe > results.json
+```
+
+Then drag and drop `results.json` onto the explorer page, or paste a public URL to a JSON result.
+
+---
+
+## Comparison summary
+
+<Tabs>
+  <Tab title="Default">
+    **Use when:** You want a quick, readable summary of what a binary can do.
+
+    - Shows ATT&CK, MAEC, MBC, and capabilities tables
+    - Hides sub-rule matches (shows only top-level capabilities)
+    - No match addresses shown
+    - Suitable for triage and reporting
+
+    ```bash
+    capa suspicious.exe
+    ```
+  </Tab>
+  <Tab title="Verbose (-v)">
+    **Use when:** You need match addresses or want to see all rules including sub-rules.
+
+    - Shows all matched rules
+    - Displays virtual addresses / process/thread IDs of matches
+    - Expanded metadata section
+    - Suitable for rule development and targeted investigation
+
+    ```bash
+    capa -v suspicious.exe
+    ```
+  </Tab>
+  <Tab title="Very verbose (-vv)">
+    **Use when:** You want to see exactly how each rule matched at the feature level.
+
+    - Shows the full feature logic tree for every match
+    - Displays specific API names, strings, byte sequences at matched locations
+    - Suitable for deep analysis and rule debugging
+
+    ```bash
+    capa -vv suspicious.exe
+    ```
+  </Tab>
+  <Tab title="JSON (-j)">
+    **Use when:** You need machine-readable output for pipelines or tooling.
+
+    - Complete result document in JSON
+    - Includes all data equivalent to `-vv`
+    - Can be uploaded to capa Explorer Web
+    - Can be re-rendered at any verbosity level
+
+    ```bash
+    capa -j suspicious.exe > results.json
+    ```
+  </Tab>
+</Tabs>
+
+<CardGroup cols={2}>
+  <Card title="CLI reference" icon="terminal" href="/usage/cli-reference">
+    Full reference for all flags and arguments
+  </Card>
+  <Card title="Tips and tricks" icon="lightbulb" href="/usage/tips-and-tricks">
+    Filter rules, speed up analysis, and use capa in pipelines
+  </Card>
+</CardGroup>

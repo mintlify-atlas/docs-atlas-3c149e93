@@ -1,0 +1,140 @@
+---
+title: "Ghidra Plugin"
+description: "Use Ghidra as a capa analysis backend via PyGhidra, and explore results directly in Ghidra's UI with capa explorer for Ghidra."
+keywords: ["Ghidra", "PyGhidra", "capa explorer", "open source", "headless", "Script Manager"]
+---
+
+## Overview
+
+capa supports [Ghidra](https://github.com/NationalSecurityAgency/ghidra) as a feature extraction backend via [PyGhidra](https://github.com/NationalSecurityAgency/ghidra/tree/master/Ghidra/Features/PyGhidra). This lets you run capa against any binary using Ghidra's analysis engine — including formats that Vivisect does not support.
+
+There are two ways to use capa with Ghidra:
+
+- **CLI mode** — Run capa from the command line with `--backend ghidra`. capa starts a headless Ghidra instance, analyzes the binary, and prints results to the terminal.
+- **Ghidra UI mode** — Run `capa_explorer.py` from Ghidra's Script Manager to display results inside the Ghidra UI, with matched functions annotated in the Symbol Tree, Disassembly Listing, Decompile window, and Bookmarks.
+
+## Requirements
+
+| Requirement | Version |
+|-------------|---------|
+| Ghidra | ≥ 12.0 |
+| flare-capa with `ghidra` extra | ≥ 10.0 |
+| capa rules | Matching your capa version |
+
+Ghidra must be installed and its installation directory must be available via the `GHIDRA_INSTALL_DIR` environment variable.
+
+## Installation
+
+<Tabs>
+  <Tab title="Standalone binary (recommended)">
+    The capa [standalone binary](https://github.com/mandiant/capa/releases) is the easiest way to use the Ghidra backend. It does not bundle Java or Ghidra itself, but it will dynamically load them from your existing Ghidra installation at runtime.
+
+    No additional Python package installation is needed. Just ensure `GHIDRA_INSTALL_DIR` is set:
+
+    ```bash
+    export GHIDRA_INSTALL_DIR=/path/to/ghidra_12.x
+    capa --backend ghidra sample.exe
+    ```
+  </Tab>
+  <Tab title="Python package">
+    Install the `flare-capa` package with the `ghidra` extra:
+
+    ```bash
+    pip install "flare-capa[ghidra]"
+    ```
+
+    Then set the Ghidra installation directory and run:
+
+    ```bash
+    export GHIDRA_INSTALL_DIR=/path/to/ghidra_12.x
+    capa --backend ghidra sample.exe
+    ```
+  </Tab>
+</Tabs>
+
+## CLI mode
+
+Use the `-b` / `--backend` flag to select the Ghidra backend:
+
+```bash
+capa --backend ghidra /path/to/sample
+```
+
+When this command runs, capa:
+
+1. Initializes a headless Ghidra instance via PyGhidra.
+2. Creates a temporary Ghidra project.
+3. Imports and analyzes the sample.
+4. Extracts features and matches rules.
+5. Prints results to the terminal.
+6. Cleans up the temporary project.
+
+Example output:
+
+```
+┌──────────┬────────────────────────────────────────────────────────────────────────────┐
+│ md5      │ bb7425b82141a1c0f7d60e5106676bb1                                           │
+│ sha1     │                                                                            │
+│ sha256   │ 58898bd42c5bd3bf9b1389f0eee5b39cd59180e8370eb9ea838a0b327bd6fe47           │
+│ analysis │ static                                                                     │
+│ os       │ windows                                                                    │
+│ format   │ pe                                                                         │
+│ arch     │ i386                                                                       │
+│ path     │ ~/Documents/capa/tests/data/Practical Malware Analysis Lab 01-01.exe_      │
+└──────────┴────────────────────────────────────────────────────────────────────────────┘
+```
+
+<Note>
+The first time you run capa with the Ghidra backend, it may take a few moments to initialize the Ghidra environment while Ghidra loads its analysis modules.
+</Note>
+
+## Ghidra UI mode (capa explorer for Ghidra)
+
+**capa explorer for Ghidra** runs capa's analysis inside Ghidra and annotates the results directly in the Ghidra UI.
+
+### What it adds to the Ghidra UI
+
+| Ghidra UI element | What capa adds |
+|-------------------|---------------|
+| **Symbol Tree** | Matched functions are added under a custom namespace that maps to the capa rule namespace |
+| **Disassembly Listing / Decompile** | Inline comments at matched functions indicating capabilities and matched features |
+| **Bookmarks** | Bookmarks on functions matched to MITRE ATT&CK and/or MBC techniques |
+
+### Setup and execution
+
+<Steps>
+  <Step title="Install capa with the ghidra extra">
+    ```bash
+    pip install "flare-capa[ghidra]"
+    ```
+  </Step>
+  <Step title="Download the capa rules">
+    Download and extract the [official capa rules](https://github.com/mandiant/capa-rules/releases) matching your installed version of capa.
+  </Step>
+  <Step title="Start Ghidra with PyGhidra">
+    Launch Ghidra using the `pyghidraRun` script found in the `support/` directory of your Ghidra installation. Run this from within the Python environment where you installed capa:
+
+    ```bash
+    <ghidra_install>/support/pyghidraRun
+    ```
+  </Step>
+  <Step title="Open your project and CodeBrowser">
+    Open the Ghidra project containing the program you want to analyze, then open the CodeBrowser.
+  </Step>
+  <Step title="Run capa_explorer.py from the Script Manager">
+    1. Open the Script Manager (**Window → Script Manager**).
+    2. Add the directory containing `capa_explorer.py` to the script directories.
+    3. Filter for `capa` and run the script.
+    4. When prompted, select the directory containing the downloaded capa rules.
+  </Step>
+</Steps>
+
+<Tip>
+You can get `capa_explorer.py` from your capa installation at `capa/ghidra/plugin/capa_explorer.py`, or download it directly from the [capa repository](https://raw.githubusercontent.com/mandiant/capa/master/capa/ghidra/plugin/capa_explorer.py).
+</Tip>
+
+## Related
+
+- [Backends Overview](/backends/overview)
+- [IDA Pro Plugin](/backends/ida-plugin)
+- [Writing Rules](/rules/writing-rules)

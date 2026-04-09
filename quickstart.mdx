@@ -1,80 +1,216 @@
 ---
 title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+description: "Run your first capa analysis and understand what the output means."
+keywords: ["capa", "quickstart", "usage", "malware analysis", "getting started"]
 ---
 
-## Get started in three steps
+This guide walks you through running capa for the first time, reading the output, and using common flags to get more detail.
 
-Get your documentation site running locally and make your first customization.
+<Steps>
+  <Step title="Download capa">
+    The quickest way to get started is the standalone binary — no Python installation required.
 
-### Step 1: Set up your local environment
+    Download the latest release for your platform from the [capa releases page](https://github.com/mandiant/capa/releases/latest).
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+    Verify the binary works:
 
-### Step 2: Deploy your changes
+    <CodeGroup>
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    ```bash Linux / macOS
+    chmod +x capa
+    ./capa --help
+    ```
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+    ```powershell Windows
+    .\capa.exe --help
+    ```
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+    </CodeGroup>
 
-### Step 3: Go live
+    <Note>
+      On macOS, Gatekeeper may block the binary on first run. See the [Installation](/installation) page for instructions to approve it in System Preferences.
+    </Note>
+  </Step>
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+  <Step title="Run capa against a file">
+    Pass any executable to capa as the first positional argument:
 
-## Next steps
+    ```bash
+    capa suspicious.exe
+    ```
 
-Now that you have your docs running, explore these key features:
+    capa loads its built-in rules, analyzes the binary, and prints a summary of detected capabilities:
+
+    ```
+    $ capa suspicious.exe
+
+    +--------------------+------------------------------------------------------------------------+
+    | ATT&CK Tactic      | ATT&CK Technique                                                       |
+    |--------------------+------------------------------------------------------------------------|
+    | DEFENSE EVASION    | Obfuscated Files or Information [T1027]                                |
+    | DISCOVERY          | Query Registry [T1012]                                                 |
+    |                    | System Information Discovery [T1082]                                   |
+    | EXECUTION          | Command and Scripting Interpreter::Windows Command Shell [T1059.003]   |
+    |                    | Shared Modules [T1129]                                                 |
+    | EXFILTRATION       | Exfiltration Over C2 Channel [T1041]                                   |
+    | PERSISTENCE        | Create or Modify System Process::Windows Service [T1543.003]           |
+    +--------------------+------------------------------------------------------------------------+
+
+    +-------------------------------------------+-------------------------------------------------+
+    | CAPABILITY                                | NAMESPACE                                       |
+    |-------------------------------------------+-------------------------------------------------|
+    | read and send data from client to server  | c2/file-transfer                                |
+    | execute shell command and capture output  | c2/shell                                        |
+    | connect to HTTP server (3 matches)        | communication/http/client                       |
+    | send HTTP request (3 matches)             | communication/http/client                       |
+    | encode data using Base64                  | data-manipulation/encoding/base64               |
+    | encode data using XOR (6 matches)         | data-manipulation/encoding/xor                  |
+    | run as a service                          | executable/pe                                   |
+    | resolve DNS                               | host-interaction/network/dns/resolve            |
+    | create process                            | host-interaction/process/create                 |
+    | create service                            | host-interaction/service/create                 |
+    | persist via Windows service               | persistence/service                             |
+    +-------------------------------------------+-------------------------------------------------+
+    ```
+  </Step>
+
+  <Step title="Understand the output">
+    The output has two tables:
+
+    **ATT&CK table** — lists MITRE ATT&CK tactics and techniques that capa matched in the binary. Each row maps a tactic (e.g., `PERSISTENCE`) to the specific technique (e.g., `Create or Modify System Process::Windows Service [T1543.003]`).
+
+    **Capabilities table** — lists individual behaviors capa detected, with their rule namespace. The namespace reflects the category of behavior (e.g., `communication/http/client`, `persistence/service`). Match counts in parentheses show how many locations in the binary triggered the rule.
+
+    <Note>
+      By default, capa shows only top-level rule matches — capabilities not already implied by another displayed rule. This keeps the output concise. Use `-v` or `-vv` to see nested and detailed matches.
+    </Note>
+
+    In the example above, the binary can send HTTP requests, encode data with XOR and Base64, install a Windows service, and spawn processes. Together, these behaviors suggest `suspicious.exe` is a persistent backdoor — a reasonable next step would be running it in a sandbox to recover the C2 server.
+  </Step>
+
+  <Step title="Handle packed files">
+    If capa detects that the input file appears to be packed or obfuscated, it prints a warning before the results:
+
+    ```
+    $ capa 05be49819139a3fdcdbddbdefd298398779521f3d68daa25275cc77508e42310.exe
+
+    WARNING:capa.capabilities.common:--------------------------------------------------------------------------------
+    WARNING:capa.capabilities.common: This sample appears to be packed.
+    WARNING:capa.capabilities.common:
+    WARNING:capa.capabilities.common: Packed samples have often been obfuscated to hide their logic.
+    WARNING:capa.capabilities.common: capa cannot handle obfuscation well using static analysis. This means the results may be misleading or incomplete.
+    WARNING:capa.capabilities.common: If possible, you should try to unpack this input file before analyzing it with capa.
+    WARNING:capa.capabilities.common: Alternatively, run the sample in a supported sandbox and invoke capa against the report to obtain dynamic analysis results.
+    WARNING:capa.capabilities.common:
+    WARNING:capa.capabilities.common: Identified via rule: (internal) packer file limitation
+    WARNING:capa.capabilities.common:
+    WARNING:capa.capabilities.common: Use -v or -vv if you really want to see the capabilities identified by capa.
+    WARNING:capa.capabilities.common:--------------------------------------------------------------------------------
+    ```
+
+    When you see this warning, consider two options:
+
+    1. **Unpack the sample first**, then re-run capa against the unpacked binary.
+    2. **Run the sample in a sandbox** (CAPE, DRAKVUF, or VMRay) and run capa against the generated report for dynamic analysis results.
+
+    To run capa against a sandbox report:
+
+    ```bash
+    capa report.json
+    ```
+  </Step>
+
+  <Step title="Get more detail with verbose flags">
+    capa supports three levels of output verbosity.
+
+    **`-v` (verbose)** — shows all rule matches, including nested ones that the default output omits:
+
+    ```bash
+    capa -v suspicious.exe
+    ```
+
+    **`-vv` (very verbose)** — shows exactly where capa found evidence of each capability, including matched addresses, API calls, strings, and logic:
+
+    ```bash
+    capa -vv suspicious.exe
+    ```
+
+    Example `-vv` output for a single capability:
+
+    ```
+    $ capa suspicious.exe -vv
+    ...
+    execute shell command and capture output
+    namespace   c2/shell
+    author      matthew.williams@mandiant.com
+    scope       function
+    att&ck      Execution::Command and Scripting Interpreter::Windows Command Shell [T1059.003]
+    references  https://docs.microsoft.com/en-us/windows/win32/api/processthreadsapi/ns-processthreadsapi-startupinfoa
+    function @ 0x4011C0
+      and:
+        match: create a process with modified I/O handles and window @ 0x4011C0
+          and:
+            number: 257 = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW @ 0x4012B8
+            or:
+              number: 68 = StartupInfo.cb (size) @ 0x401282
+            or: = API functions that accept a pointer to a STARTUPINFO structure
+              api: kernel32.CreateProcess @ 0x401343
+        match: create pipe @ 0x4011C0
+          or:
+            api: kernel32.CreatePipe @ 0x40126F, 0x401280
+        or:
+          string: "cmd.exe" @ 0x4012FD
+    ...
+    ```
+
+    This output tells you the function address where the capability was found (`0x4011C0`), which APIs were matched (`kernel32.CreateProcess`, `kernel32.CreatePipe`), and the exact strings and constants involved. This is useful for verifying results and finding the right starting point in IDA Pro or Ghidra.
+  </Step>
+
+  <Step title="Export results as JSON">
+    Use the `-j` flag to output results as machine-readable JSON, suitable for scripting or piping into other tools:
+
+    ```bash
+    capa -j suspicious.exe > results.json
+    ```
+
+    You can also load the resulting JSON file in the [capa Explorer Web](https://mandiant.github.io/capa/explorer/) for an interactive view in your browser.
+  </Step>
+
+  <Step title="Use custom rules">
+    By default, capa uses its bundled rules. To run against a different rule set or your own custom rules, use the `-r` flag:
+
+    ```bash
+    capa -r /path/to/rules suspicious.exe
+    ```
+
+    You can point `-r` at a directory of rule files or a single `.yml` file. This is useful when:
+
+    - You installed capa via pip (which does not bundle rules) and downloaded rules separately.
+    - You are developing and testing your own rules before contributing them to [capa-rules](https://github.com/mandiant/capa-rules).
+
+    **Example: download and use a specific rules release:**
+
+    ```bash
+    wget https://github.com/mandiant/capa-rules/archive/refs/tags/v9.4.0.zip
+    unzip v9.4.0.zip
+    capa -r capa-rules-v9.4.0/ suspicious.exe
+    ```
+  </Step>
+</Steps>
+
+## What's next
 
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="CLI reference" icon="terminal" href="/usage/cli-reference">
+    Full documentation of all flags, options, and arguments.
+  </Card>
+  <Card title="Output formats" icon="file-text" href="/usage/output-formats">
+    Learn about JSON, verbose, and other output formats.
+  </Card>
+  <Card title="Tips and tricks" icon="lightbulb" href="/usage/tips-and-tricks">
+    Speed up analysis, filter by tag, restrict to selected functions.
+  </Card>
+  <Card title="Writing rules" icon="pencil" href="/rules/writing-rules">
+    Extend capa with your own YAML detection rules.
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

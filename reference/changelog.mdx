@@ -1,0 +1,153 @@
+---
+title: "Changelog"
+description: "Highlights from recent capa releases. Current version: 9.4.0."
+keywords: ["changelog", "releases", "versions", "new features", "bug fixes"]
+---
+
+<Note>
+  This page summarizes highlights for recent releases. For the complete list of changes, visit the [full GitHub releases page](https://github.com/mandiant/capa/releases).
+</Note>
+
+## v9.4.0
+
+Includes Ghidra PyGhidra support, performance improvements, dependency updates, and 26 new rules.
+
+### New Features
+
+- **Ghidra:** Added support for PyGhidra as a backend.
+- **VMRay:** Extract number features from whitelisted `void_ptr` parameters (`hKey`, `hKeyRoot`).
+
+### Bug Fixes
+
+- Suggest `--os` flag in unsupported OS error message to help users override ELF OS detection.
+- Escape sample-controlled strings before passing to Rich to prevent `MarkupError`.
+- Handle empty or invalid YAML documents gracefully in rule loading.
+- Fixed insecure deserialization vulnerability in YAML loading.
+- Gracefully handle ELF files with unsupported architectures or malformed segments.
+- Fix `Regex.get_value_str()` returning escaped pattern instead of raw regex.
+- Skip PE files with unrealistically large section virtual sizes to prevent resource exhaustion.
+- Fix unbounded range sentinel precedence for `count(...): N or more` rules.
+- Support `*BSD` in the capa result cache.
+
+### Performance
+
+- Eliminate O(n²) tuple growth and reduce per-match overhead.
+- Pre-filter extracted bytes with 4-byte prefixes for faster candidate selection.
+
+---
+
+## v9.3.1
+
+Patch release fixing a missing import for the capa Explorer IDA Pro plugin.
+
+### Bug Fixes
+
+- Add missing `ida-netnode` dependency to `project.toml`.
+
+---
+
+## v9.3.0
+
+Over 20 new and improved rules. The capa Explorer IDA Pro plugin is now available via the IDA Pro plugin repository with Qt compatibility for PyQt5 and PySide6. ARM64 release binaries added for Linux and macOS.
+
+### New Features
+
+- Added ARM64 binary releases for Linux and macOS.
+- Run tests against IDA via idalib.
+
+### Bug Fixes
+
+- Binary Ninja: fix a crash during feature extraction when the MLIL is unavailable.
+
+### IDA Pro Plugin
+
+- Published `ida-plugin.json` for inclusion in the IDA Pro plugin repository.
+- Added Qt compatibility layer for PyQt5 and PySide6 support.
+- Delayed Qt imports to avoid loading Qt modules when running under idalib.
+
+---
+
+## v9.2.1
+
+Patch release fixing a PyInstaller warning and enabling the standalone binary to run on systems with older versions of glibc.
+
+### Bug Fixes
+
+- Exclude `pkg_resources` from the PyInstaller build to remove a spurious warning.
+- Downgrade the Ubuntu build runner to support older glibc versions.
+
+---
+
+## v9.2.0
+
+Improvements to dynamic analysis, including relaxed CAPE field validation across many CAPE versions and support for additional VMRay submission file types. Includes 22 new rules.
+
+### New Features
+
+- VMRay: do not restrict analysis to PE and ELF files — supports formats such as `.docx`.
+
+### Bug Fixes
+
+- CAPE: make several fields optional to handle more CAPE output versions.
+- Lint: add warning for regex features with unescaped dots.
+- Lint: add error for incomplete registry control set regex patterns.
+
+---
+
+## v9.1.0
+
+Dynamic analysis improvements with relaxed CAPE field validation. Many dynamic rules updated to make better use of the "span of calls" scope.
+
+### Bug Fixes
+
+- Only parse CAPE fields required for analysis.
+- Render result documents without needing the associated rules present.
+- VMRay: only verify that process OS and monitor IDs match.
+- Render: don't assume prior matches exist within a thread.
+
+---
+
+## v9.0.0
+
+Introduced the **span-of-calls** scope for dynamic analysis: matches features across a sliding window of API calls within a thread. Useful for identifying multi-step behaviors such as `OpenFile` / `ReadFile` / `CloseFile` without analyzing an entire thread.
+
+### New Features
+
+- Add `span-of-calls` scope to match features across a sliding window of API calls within a thread.
+- Add warning for dynamic .NET samples.
+- Add lint for detecting duplicate features in capa-rules.
+- Add lint to catch rules that depend on other rules with impossible scope combinations.
+
+### Breaking Changes
+
+- Removed `is_static_limitation` method from `capa.rules.Rule`.
+- Added `span-of-calls` scope to the rule format.
+- Capability functions now return dataclasses instead of tuples.
+
+### Bug Fixes
+
+- Dynamic analysis: only check file limitations for static file formats.
+- VMRay: load more analysis archives; skip non-printable strings; loosen file checks.
+- Rules: scopes can now have subscope blocks with the same scope.
+
+---
+
+## v8.0.0
+
+Added support for IDA Pro 9.0 and idalib. Various Binary Ninja improvements including database file loading. Python 3.10 or newer is now required.
+
+### New Features
+
+- Support loading and analyzing a Binary Ninja database file.
+- Allow `call` as a valid subscope for call-scoped rules.
+- VMRay: record process command line details.
+
+### Breaking Changes
+
+- Removed support for Python 3.8. Python 3.10 is now the minimum supported version.
+
+### Bug Fixes
+
+- IDA Pro: handle IDA Pro 8.3/8.4 vs. 9.0 API changes.
+- Ghidra: fix saving of base address.
+- Binary Ninja: support loading raw x86/x86_64 shellcode; fix crash when IL is unavailable; major performance improvements.

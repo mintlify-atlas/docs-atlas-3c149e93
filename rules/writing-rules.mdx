@@ -1,0 +1,353 @@
+---
+title: "Writing rules"
+description: "A step-by-step guide to writing new capa rules, from rule structure to testing and validation."
+keywords: ["capa rules", "write rules", "rule authoring", "capafmt", "rule linting", "features", "scopes"]
+---
+
+capa rules are YAML files that describe behaviors to detect in executable files. Each rule specifies what to look for (features) and where to look (scope), plus metadata that maps the behavior to threat intelligence frameworks.
+
+This guide walks you through writing a rule from scratch.
+
+## Rule structure
+
+Every rule has two top-level sections under the `rule` key:
+
+```yaml
+rule:
+  meta:
+    # descriptive metadata
+  features:
+    # what to match
+```
+
+The `meta` block describes the rule — its name, namespace, scope, and optional threat intelligence mappings. The `features` block describes what capa should look for.
+
+## Step-by-step: writing a rule
+
+<Steps>
+  <Step title="Define the meta block">
+    Start with the required fields. Every rule needs a `name` and a `namespace`.
+
+    ```yaml
+    rule:
+      meta:
+        name: connect to HTTP server
+        namespace: communication/http/client
+        authors:
+          - you@example.com
+        scopes:
+          static: function
+          dynamic: call
+    ```
+
+    The `name` should be a short, lowercase description of the behavior. The `namespace` is a slash-separated path that places the rule in the capability hierarchy.
+  </Step>
+
+  <Step title="Choose a scope">
+    The `scopes` field tells capa where to look for the rule's features. You specify a `static` scope (for disassembly-based analysis) and a `dynamic` scope (for sandbox report analysis).
+
+    <Tabs>
+      <Tab title="Static scopes">
+        | Scope | Description |
+        |-------|-------------|
+        | `file` | Match across the entire file |
+        | `function` | Match within a single function |
+        | `basic block` | Match within a basic block |
+        | `instruction` | Match at a single instruction |
+
+        Use `function` for most behavioral rules. Use `basic block` when the features must appear close together in the control flow. Use `file` for file-level properties like imports, exports, or PE sections.
+      </Tab>
+      <Tab title="Dynamic scopes">
+        | Scope | Description |
+        |-------|-------------|
+        | `process` | Match across an entire process |
+        | `thread` | Match within a thread |
+        | `call` | Match at a single API call |
+
+        Use `call` to match specific API calls observed at runtime. Use `process` for process-level behaviors like injecting into another process.
+      </Tab>
+    </Tabs>
+
+    Set a scope to `unsupported` if the rule only applies to one analysis flavor:
+
+    ```yaml
+    scopes:
+      static: function
+      dynamic: unsupported
+    ```
+  </Step>
+
+  <Step title="Add threat intelligence mappings">
+    Map the behavior to ATT&CK and MBC where applicable. These populate the technique tables in capa's output.
+
+    ```yaml
+    att&ck:
+      - Command and Control::Application Layer Protocol::Web Protocols [T1071.001]
+    mbc:
+      - Communication::HTTP Communication::Client Request [C0002.012]
+    references:
+      - https://docs.microsoft.com/en-us/windows/win32/api/winhttp/
+    ```
+
+    These fields are optional but strongly encouraged for rules in the standard library.
+  </Step>
+
+  <Step title="Write the features block">
+    The `features` block contains the logic that must be satisfied for the rule to match. Features are combined using `and`, `or`, `not`, and `optional` operators.
+
+    ```yaml
+    features:
+      - and:
+        - api: winhttp.WinHttpOpenRequest
+        - or:
+          - api: winhttp.WinHttpSendRequest
+          - api: winhttp.WinHttpWriteData
+    ```
+
+    This rule matches a function that calls `WinHttpOpenRequest` and either `WinHttpSendRequest` or `WinHttpWriteData`.
+  </Step>
+
+  <Step title="Add examples">
+    The `examples` field lists known sample hashes (and optional function addresses) that demonstrate the behavior. This helps validate that the rule works correctly.
+
+    ```yaml
+    examples:
+      - 9324d1a8ae37a36ae560c37448c73a51:0x401000
+    ```
+
+    The format is `<hash>:<address>`, where the address is optional.
+  </Step>
+
+  <Step title="Format and validate the rule">
+    Use `capafmt.py` to format your rule consistently:
+
+    ```bash
+    # Format in place
+    python scripts/capafmt.py -i my-rule.yml
+
+    # Check formatting without modifying
+    python scripts/capafmt.py --check my-rule.yml
+    ```
+
+    Use `lint.py` to check the rule for style issues:
+
+    ```bash
+    python scripts/lint.py my-rule.yml
+    ```
+
+    The linter checks for common problems like incorrect casing, missing fields, and filenames that don't match the rule name.
+  </Step>
+</Steps>
+
+## Feature types
+
+Features are the building blocks of rule logic. Each feature describes one observable property that capa can detect.
+
+<AccordionGroup>
+  <Accordion title="api — API function calls">
+    Match a call to an API function. Use the `dll.Function` format for Windows APIs.
+
+    ```yaml
+    - api: kernel32.CreateProcess
+    - api: ws2_32.socket
+    - api: socket
+    ```
+
+    You can omit the DLL prefix to match any DLL that exports that function name. Use the full `dll.Function` form to be precise.
+  </Accordion>
+
+  <Accordion title="string — string literals">
+    Match a string constant in the binary. Strings are matched exactly (case-sensitive).
+
+    ```yaml
+    - string: "cmd.exe"
+    - string: "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"
+    ```
+
+    Use `substring` for partial matches, or `regex` for pattern matching.
+
+    ```yaml
+    - substring: "http"
+    - regex: /https?:\/\//
+    ```
+  </Accordion>
+
+  <Accordion title="number — numeric constants">
+    Match a numeric constant. Use `= DESCRIPTION` to document what the constant means.
+
+    ```yaml
+    - number: 6 = IPPROTO_TCP
+    - number: 1 = SOCK_STREAM
+    - number: 0x6A
+    ```
+
+    This is useful for matching magic values, protocol constants, and flag combinations.
+  </Accordion>
+
+  <Accordion title="bytes — byte sequences">
+    Match a specific sequence of bytes (up to 128 bytes). Values are space-separated hex pairs.
+
+    ```yaml
+    - bytes: 6A 40 68 00 30 00 00
+    ```
+  </Accordion>
+
+  <Accordion title="characteristic — behavioral characteristics">
+    Match a recognized behavioral pattern. Characteristics are predefined by capa.
+
+    ```yaml
+    - characteristic: loop
+    - characteristic: recursive call
+    - characteristic: nzxor
+    - characteristic: stack string
+    - characteristic: tight loop
+    - characteristic: indirect call
+    ```
+
+    Available characteristics vary by scope. `loop` and `recursive call` are available at function scope. `tight loop` and `stack string` are available at basic block scope. `nzxor`, `indirect call`, and others are at instruction scope.
+  </Accordion>
+
+  <Accordion title="os, arch, format — environment features">
+    Restrict a rule to a specific operating system, architecture, or file format.
+
+    ```yaml
+    - os: windows
+    - os: linux
+    - arch: x86
+    - arch: amd64
+    - format: pe
+    - format: elf
+    ```
+
+    These are global features available in any scope. Use them to avoid false matches on non-targeted platforms.
+  </Accordion>
+
+  <Accordion title="property/read, property/write — .NET properties">
+    Match access to a .NET property.
+
+    ```yaml
+    - property/read: System.Net.Sockets.TcpClient::Client
+    - property/write: System.Net.WebClient::Proxy
+    ```
+
+    Use `property/read` for getter access and `property/write` for setter access.
+  </Accordion>
+
+  <Accordion title="class, namespace — .NET types">
+    Match usage of a .NET class or namespace.
+
+    ```yaml
+    - class: System.Net.WebClient
+    - namespace: System.Net
+    ```
+  </Accordion>
+
+  <Accordion title="import, export, section — file-level features">
+    Match file-level properties. These are only available at `file` scope.
+
+    ```yaml
+    - import: kernel32.VirtualAlloc
+    - export: DllMain
+    - section: .text
+    - section: UPX0
+    ```
+  </Accordion>
+
+  <Accordion title="match — referencing other rules">
+    Match another rule by name or namespace. This lets you compose complex rules from simpler ones.
+
+    ```yaml
+    - match: create a process
+    - match: communication/http
+    ```
+
+    Using a namespace prefix matches any rule under that namespace.
+  </Accordion>
+</AccordionGroup>
+
+## Logic operators
+
+Combine features using logic operators. Operators can be nested to any depth.
+
+| Operator | Meaning |
+|----------|---------|
+| `and` | All child features must match |
+| `or` | At least one child feature must match |
+| `not` | The child feature must not match |
+| `optional` | Child features may match, but are not required — used to add weight |
+
+Example combining operators:
+
+```yaml
+features:
+  - and:
+    - or:
+      - api: kernel32.CreateProcessA
+      - api: kernel32.CreateProcessW
+      - api: kernel32.CreateProcessAsUserW
+    - optional:
+      - string: "cmd.exe"
+      - string: "/c "
+```
+
+### Count and range qualifiers
+
+You can require a feature to match a specific number of times:
+
+```yaml
+features:
+  - and:
+    - api/count: kernel32.WriteFile (2, 10)    # between 2 and 10 calls
+    - api/count: kernel32.ReadFile (1, )       # at least 1 call
+```
+
+## Complete example: HTTP C2 rule
+
+Here is a complete rule that detects a function establishing HTTP communication for C2 purposes:
+
+```yaml
+rule:
+  meta:
+    name: connect to HTTP server
+    namespace: communication/http/client
+    authors:
+      - you@example.com
+    scopes:
+      static: function
+      dynamic: call
+    att&ck:
+      - Command and Control::Application Layer Protocol::Web Protocols [T1071.001]
+    mbc:
+      - Communication::HTTP Communication::Client Request [C0002.012]
+    references:
+      - https://docs.microsoft.com/en-us/windows/win32/winhttp/
+  features:
+    - and:
+      - or:
+        - api: winhttp.WinHttpOpen
+        - api: wininet.InternetOpenA
+        - api: wininet.InternetOpenW
+      - or:
+        - api: winhttp.WinHttpConnect
+        - api: wininet.InternetConnectA
+        - api: wininet.InternetConnectW
+      - or:
+        - api: winhttp.WinHttpOpenRequest
+        - api: wininet.HttpOpenRequestA
+        - api: wininet.HttpOpenRequestW
+```
+
+<Tip>
+  Keep rules focused on a single behavior. If a rule needs to match many different scenarios, consider splitting it into multiple rules under the same namespace, then referencing them from a parent rule using `match`.
+</Tip>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Rule format reference" icon="file-code" href="/rules/rule-format">
+    Complete reference for all fields, features, and logic operators
+  </Card>
+  <Card title="Rules overview" icon="book" href="/rules/overview">
+    Learn how rules are organized, versioned, and loaded
+  </Card>
+</CardGroup>

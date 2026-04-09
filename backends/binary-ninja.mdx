@@ -1,0 +1,101 @@
+---
+title: "Binary Ninja"
+description: "Use Binary Ninja as a capa analysis backend to extract features from binaries and Binary Ninja databases."
+keywords: ["Binary Ninja", "binja", "bndb", "binary analysis", "import-to-bn", "backend"]
+---
+
+## Overview
+
+capa supports [Binary Ninja](https://binary.ninja/) as a static analysis backend. When you use this backend, capa loads the target file with Binary Ninja's analysis engine, extracts features from the disassembly, and matches them against the rule set.
+
+This backend is useful when you already have Binary Ninja installed and want to leverage its analysis alongside capa's capability detection. It also lets you analyze Binary Ninja database files (`.bndb`) directly, so you can apply capa to work you have already done in Binary Ninja.
+
+## Requirements
+
+- Binary Ninja must be installed with a valid license.
+- The `binaryninja` Python API module must be importable. capa will search common install locations automatically if the module is not on your `PYTHONPATH`.
+
+## Running capa with Binary Ninja
+
+Pass `--backend binja` to select the Binary Ninja backend:
+
+```bash
+capa --backend binja sample.exe
+```
+
+You can also analyze a Binary Ninja database file directly:
+
+```bash
+capa --backend binja sample.bndb
+```
+
+capa supports all file formats that Binary Ninja can open, including PE, ELF, and 32-bit and 64-bit shellcode files.
+
+<Note>
+capa locates the Binary Ninja API module automatically by searching the system Python path and, on Linux, by reading the XDG Desktop Entry for Binary Ninja. If the API is not found, capa exits with an error. Install Binary Ninja and ensure its Python API is accessible before using this backend.
+</Note>
+
+## How capa finds the Binary Ninja API
+
+capa uses the following strategy to locate the Binary Ninja Python module:
+
+1. Try to import `binaryninja` from the current Python environment.
+2. If that fails and the platform is Linux, read the Binary Ninja desktop entry file (`com.vector35.binaryninja.desktop`) to find the Binary Ninja installation directory, then add its `python/` subdirectory to `sys.path`.
+
+On macOS and Windows, if the `binaryninja` module is not importable, capa will report that it cannot find the Binary Ninja API and exit.
+
+## Features extracted by this backend
+
+The Binary Ninja backend is a static extractor (`StaticFeatureExtractor`). It extracts:
+
+- **File-scope features** — format, architecture, OS, imports, strings, sections
+- **Function-scope features** — API calls, constants, stack strings, basic block counts
+- **Basic block-scope features** — instructions, characteristic patterns
+- **Instruction-scope features** — operands, API references, number constants
+
+## Importing capa results into Binary Ninja
+
+The `import-to-bn.py` script imports a capa JSON report into a Binary Ninja database, annotating matched functions with comments:
+
+```
+; capa: print debug messages (host-interaction/log/debug/write-event)
+; capa: delete service (host-interaction/service/delete)
+
+public UninstallService
+UninstallService proc near
+...
+```
+
+### Usage
+
+<Steps>
+  <Step title="Generate a capa JSON report">
+    Run capa with the `--json` flag to produce a machine-readable report:
+
+    ```bash
+    capa --json sample.exe > report.json
+    ```
+  </Step>
+  <Step title="Open the sample in Binary Ninja">
+    Open the same binary in Binary Ninja so that the addresses in the report match the database.
+  </Step>
+  <Step title="Run import-to-bn.py">
+    In Binary Ninja, open the script from the **Tools** menu or the command palette. The script reads `report.json` and adds function comments for each capa match.
+
+    You can also run it directly from the command line if Binary Ninja's Python API is on your path:
+
+    ```bash
+    python scripts/import-to-bn.py
+    ```
+  </Step>
+</Steps>
+
+<Tip>
+`import-to-bn.py` verifies that the report matches the currently open database before making changes. Check the Binary Ninja log window for any errors or a summary of applied annotations.
+</Tip>
+
+## Related
+
+- [Backends Overview](/backends/overview)
+- [CLI Reference](/usage/cli-reference)
+- [Output Formats](/usage/output-formats)

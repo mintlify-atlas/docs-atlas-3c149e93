@@ -1,0 +1,616 @@
+---
+title: "API Reference"
+description: "Public Python API surface for using capa as a library."
+---
+
+This page documents the public Python API for the key capa modules. All type signatures are extracted from the source code.
+
+<CardGroup cols={2}>
+  <Card title="capa.loader" icon="plug" href="#capaloader">
+    Backend constants and the `get_extractor` function.
+  </Card>
+  <Card title="capa.rules" icon="file-text" href="#caparules">
+    `RuleSet` and `get_rules` for loading YAML rules from disk.
+  </Card>
+  <Card title="capa.capabilities.common" icon="search" href="#capabilitiescapabilitiescommon">
+    `find_capabilities`, `find_file_capabilities`, and the `Capabilities` return type.
+  </Card>
+  <Card title="capa.features.extractors.base_extractor" icon="cpu" href="#capafeaturestractorsbase_extractor">
+    `StaticFeatureExtractor` and `DynamicFeatureExtractor` base classes.
+  </Card>
+  <Card title="capa.render.result_document" icon="file-json" href="#caparesultdocument">
+    `ResultDocument` — the full structured analysis result.
+  </Card>
+  <Card title="capa.exceptions" icon="triangle-alert" href="#capaexceptions">
+    Exceptions raised by extractor and loader functions.
+  </Card>
+</CardGroup>
+
+---
+
+## `capa.loader`
+
+Handles creating feature extractors for all supported backends and collecting analysis metadata.
+
+### Backend constants
+
+Pass one of these string constants to `get_extractor()` as the `backend` parameter.
+
+| Constant | Value | Description |
+|---|---|---|
+| `BACKEND_VIV` | `"vivisect"` | Vivisect disassembler. Default for static PE/ELF analysis. |
+| `BACKEND_DOTNET` | `"dotnet"` | dnfile-based .NET PE extractor. |
+| `BACKEND_BINJA` | `"binja"` | Binary Ninja (requires `binaryninja` installed). |
+| `BACKEND_PEFILE` | `"pefile"` | pefile-based extractor. File-scope features only, no code analysis. |
+| `BACKEND_CAPE` | `"cape"` | CAPE sandbox JSON report. |
+| `BACKEND_DRAKVUF` | `"drakvuf"` | DRAKVUF sandbox JSONL report. |
+| `BACKEND_VMRAY` | `"vmray"` | VMRay sandbox ZIP report. |
+| `BACKEND_FREEZE` | `"freeze"` | capa freeze file (previously frozen features). |
+| `BACKEND_BINEXPORT2` | `"binexport2"` | BinExport2 file (from IDA, Ghidra, or Binary Ninja). |
+| `BACKEND_IDA` | `"ida"` | IDA Pro via idalib (requires idalib installed). |
+| `BACKEND_GHIDRA` | `"ghidra"` | Ghidra via pyghidra (requires `pyghidra` installed). |
+
+### `get_extractor`
+
+```python
+def get_extractor(
+    input_path: Path,
+    input_format: str,
+    os_: str,
+    backend: str,
+    sigpaths: list[Path],
+    should_save_workspace: bool = False,
+    disable_progress: bool = False,
+    sample_path: Optional[Path] = None,
+) -> FeatureExtractor:
+    ...
+```
+
+Creates and returns a feature extractor for the given file and backend.
+
+<AccordionGroup>
+  <Accordion title="Parameters">
+    | Parameter | Type | Description |
+    |---|---|---|
+    | `input_path` | `Path` | Path to the file to analyze (binary, sandbox report, BinExport2 file, etc.). |
+    | `input_format` | `str` | File format constant from `capa.features.common`. Use `FORMAT_AUTO` to detect automatically. |
+    | `os_` | `str` | Target OS constant. Use `OS_AUTO` to detect automatically. |
+    | `backend` | `str` | Backend constant from `capa.loader` (e.g., `BACKEND_VIV`). |
+    | `sigpaths` | `list[Path]` | Paths to FLIRT signature files (`.sig`, `.pat`, `.pat.gz`). Only used by `BACKEND_VIV`. Pass `[]` to skip. |
+    | `should_save_workspace` | `bool` | Save the vivisect workspace to disk after analysis. Default `False`. |
+    | `disable_progress` | `bool` | Suppress the Rich progress spinner. Default `False`. |
+    | `sample_path` | `Optional[Path]` | Path to the original binary sample. Required for `BACKEND_BINEXPORT2`; unused otherwise. |
+  </Accordion>
+  <Accordion title="Returns">
+    Returns a `FeatureExtractor` instance — either a `StaticFeatureExtractor` or `DynamicFeatureExtractor` depending on the backend.
+  </Accordion>
+  <Accordion title="Raises">
+    | Exception | When |
+    |---|---|
+    | `UnsupportedFormatError` | File format is not recognized or not supported by the selected backend. |
+    | `UnsupportedArchError` | Binary architecture is not supported. |
+    | `UnsupportedOSError` | Binary OS is not recognized. |
+    | `CorruptFile` | File appears malformed (e.g., PE with unrealistically large sections). |
+    | `RuntimeError` | Backend-specific error (e.g., Binary Ninja or IDA not found). |
+  </Accordion>
+</AccordionGroup>
+
+### `collect_metadata`
+
+```python
+def collect_metadata(
+    argv: list[str],
+    input_path: Path,
+    input_format: str,
+    os_: str,
+    rules_path: list[Path],
+    extractor: FeatureExtractor,
+    capabilities: Capabilities,
+) -> rdoc.Metadata:
+    ...
+```
+
+Collects sample hashes, format/arch/OS strings, and other metadata required to construct a `ResultDocument`. Call this after `find_capabilities()`.
+
+### `compute_layout`
+
+```python
+def compute_layout(
+    rules: RuleSet,
+    extractor: FeatureExtractor,
+    capabilities: MatchResults,
+) -> rdoc.Layout:
+    ...
+```
+
+Computes the spatial layout of matches — which basic blocks are inside which functions (static), or which calls are inside which threads and processes (dynamic). Assigns the result to `meta.analysis.layout` before rendering.
+
+---
+
+## `capa.rules`
+
+### `get_rules`
+
+```python
+def get_rules(
+    rule_paths: list[Path],
+    cache_dir: Optional[Path] = None,
+    on_load_rule: Callable[[Path, int, int], None] = ...,
+    enable_cache: bool = True,
+) -> RuleSet:
+    ...
+```
+
+Loads and compiles rules from one or more file system paths. Paths may be individual `.yml` files or directories that are searched recursively.
+
+<AccordionGroup>
+  <Accordion title="Parameters">
+    | Parameter | Type | Description |
+    |---|---|---|
+    | `rule_paths` | `list[Path]` | Paths to rule files or directories. Directories are searched recursively. |
+    | `cache_dir` | `Optional[Path]` | Directory for caching the compiled ruleset. Defaults to the platform cache directory. |
+    | `on_load_rule` | `Callable` | Progress callback invoked before each rule is loaded, signature `(path, index, total) -> None`. |
+    | `enable_cache` | `bool` | Load from cache if available. Default `True`. |
+  </Accordion>
+  <Accordion title="Returns">
+    Returns a `RuleSet` instance with rules sorted topologically and indexed by scope, namespace, and name.
+  </Accordion>
+  <Accordion title="Raises">
+    | Exception | When |
+    |---|---|
+    | `InvalidRule` | A rule file contains invalid YAML or violates the rule schema. |
+    | `InvalidRuleSet` | No valid rules were found in the provided paths. |
+  </Accordion>
+</AccordionGroup>
+
+### `RuleSet`
+
+```python
+class RuleSet:
+    def __init__(self, rules: list[Rule]) -> None: ...
+```
+
+A compiled, indexed collection of capa rules. Constructed by `get_rules()`. Rules are verified for uniqueness, dependency satisfaction, and then sorted topologically per scope.
+
+<AccordionGroup>
+  <Accordion title="Attributes">
+    | Attribute | Type | Description |
+    |---|---|---|
+    | `rules` | `dict[str, Rule]` | All rules keyed by rule name. |
+    | `rules_by_namespace` | `dict[str, list[Rule]]` | Rules indexed by their `namespace` metadata field. |
+    | `rules_by_scope` | `dict[Scope, list[Rule]]` | Rules indexed by their static or dynamic scope. |
+    | `source_rule_count` | `int` | Number of rules originally provided (before subscope expansion). |
+  </Accordion>
+  <Accordion title="Properties">
+    Convenience accessors for rules at a given scope:
+
+    ```python
+    ruleset.file_rules          # list[Rule] — file-scoped rules
+    ruleset.function_rules      # list[Rule] — function-scoped rules
+    ruleset.basic_block_rules   # list[Rule] — basic block-scoped rules
+    ruleset.instruction_rules   # list[Rule] — instruction-scoped rules
+    ruleset.process_rules       # list[Rule] — process-scoped rules (dynamic)
+    ruleset.thread_rules        # list[Rule] — thread-scoped rules (dynamic)
+    ruleset.span_of_calls_rules # list[Rule] — span-of-calls rules (dynamic)
+    ruleset.call_rules          # list[Rule] — call-scoped rules (dynamic)
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## `capa.capabilities.common`
+
+### `find_capabilities`
+
+```python
+def find_capabilities(
+    ruleset: RuleSet,
+    extractor: FeatureExtractor,
+    disable_progress: bool = False,
+    **kwargs,
+) -> Capabilities:
+    ...
+```
+
+The main analysis function. Dispatches to `find_static_capabilities` or `find_dynamic_capabilities` depending on the extractor type, then returns matched rules and feature counts.
+
+<AccordionGroup>
+  <Accordion title="Parameters">
+    | Parameter | Type | Description |
+    |---|---|---|
+    | `ruleset` | `RuleSet` | The compiled rule set from `capa.rules.get_rules()`. |
+    | `extractor` | `FeatureExtractor` | Extractor instance from `capa.loader.get_extractor()`. |
+    | `disable_progress` | `bool` | Suppress the Rich progress display. Default `False`. |
+  </Accordion>
+  <Accordion title="Returns">
+    Returns a `Capabilities` dataclass.
+  </Accordion>
+</AccordionGroup>
+
+### `find_file_capabilities`
+
+```python
+def find_file_capabilities(
+    ruleset: RuleSet,
+    extractor: FeatureExtractor,
+    function_features: FeatureSet,
+) -> FileCapabilities:
+    ...
+```
+
+Runs only file-scope rule matching. Used internally to check for file limitations (e.g., packed samples) before committing to a full analysis.
+
+### `Capabilities`
+
+```python
+@dataclass
+class Capabilities:
+    matches: MatchResults
+    feature_counts: StaticFeatureCounts | DynamicFeatureCounts
+    library_functions: Optional[tuple[LibraryFunction, ...]] = None
+```
+
+The return type of `find_capabilities()`.
+
+<AccordionGroup>
+  <Accordion title="Fields">
+    | Field | Type | Description |
+    |---|---|---|
+    | `matches` | `MatchResults` | `dict[str, list[tuple[Address, Result]]]` — for each matched rule name, the list of `(address, match_result)` pairs. |
+    | `feature_counts` | `StaticFeatureCounts \| DynamicFeatureCounts` | Feature counts per function (static) or per process (dynamic). |
+    | `library_functions` | `Optional[tuple[LibraryFunction, ...]]` | Library functions identified via FLIRT signatures. Only present for static analysis. |
+  </Accordion>
+</AccordionGroup>
+
+### `FileCapabilities`
+
+```python
+@dataclass
+class FileCapabilities:
+    features: FeatureSet
+    matches: MatchResults
+    feature_count: int
+```
+
+Return type of `find_file_capabilities()`.
+
+---
+
+## `capa.features.extractors.base_extractor`
+
+Defines the abstract base classes that all backend extractors implement.
+
+<Note>
+  `FeatureExtractor` is a type alias: `FeatureExtractor = Union[StaticFeatureExtractor, DynamicFeatureExtractor]`. Use `isinstance(extractor, StaticFeatureExtractor)` to distinguish the two at runtime.
+</Note>
+
+### `StaticFeatureExtractor`
+
+Base class for extractors that analyze a binary without executing it (vivisect, IDA, Ghidra, Binary Ninja, dnfile, pefile, BinExport2, freeze).
+
+```python
+class StaticFeatureExtractor:
+    def __init__(self, hashes: SampleHashes) -> None: ...
+```
+
+<AccordionGroup>
+  <Accordion title="Abstract methods">
+    Subclasses must implement all of the following:
+
+    ```python
+    def get_base_address(self) -> AbsoluteVirtualAddress | _NoAddress: ...
+    # Returns the preferred load address (NO_ADDRESS for shellcode/.NET).
+
+    def extract_global_features(self) -> Iterator[tuple[Feature, Address]]: ...
+    # Yields features visible at every scope: OS, Arch, Format.
+
+    def extract_file_features(self) -> Iterator[tuple[Feature, Address]]: ...
+    # Yields file-scope features: imports, exports, sections, strings, etc.
+
+    def get_functions(self) -> Iterator[FunctionHandle]: ...
+    # Enumerates functions in the binary.
+
+    def extract_function_features(self, f: FunctionHandle) -> Iterator[tuple[Feature, Address]]: ...
+    # Yields function-scope features for the given function.
+
+    def get_basic_blocks(self, f: FunctionHandle) -> Iterator[BBHandle]: ...
+    # Enumerates basic blocks within a function.
+
+    def extract_basic_block_features(self, f: FunctionHandle, bb: BBHandle) -> Iterator[tuple[Feature, Address]]: ...
+    # Yields basic block-scope features.
+
+    def get_instructions(self, f: FunctionHandle, bb: BBHandle) -> Iterator[InsnHandle]: ...
+    # Enumerates instructions within a basic block.
+
+    def extract_insn_features(self, f: FunctionHandle, bb: BBHandle, insn: InsnHandle) -> Iterator[tuple[Feature, Address]]: ...
+    # Yields instruction-scope features.
+    ```
+  </Accordion>
+  <Accordion title="Non-abstract methods">
+    ```python
+    def get_sample_hashes(self) -> SampleHashes: ...
+    # Returns md5, sha1, sha256 for the analyzed sample.
+
+    def is_library_function(self, addr: Address) -> bool: ...
+    # Returns True if the address is a recognized library function. Default: False.
+
+    def get_function_name(self, addr: Address) -> str: ...
+    # Returns the name for a known library function. Raises KeyError if unknown.
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### `DynamicFeatureExtractor`
+
+Base class for extractors that analyze sandbox execution traces (CAPE, DRAKVUF, VMRay).
+
+```python
+class DynamicFeatureExtractor:
+    def __init__(self, hashes: SampleHashes) -> None: ...
+```
+
+<AccordionGroup>
+  <Accordion title="Abstract methods">
+    ```python
+    def extract_global_features(self) -> Iterator[tuple[Feature, Address]]: ...
+    # Yields global-scope features: OS, Arch, Format.
+
+    def extract_file_features(self) -> Iterator[tuple[Feature, Address]]: ...
+    # Yields file-scope features.
+
+    def get_processes(self) -> Iterator[ProcessHandle]: ...
+    # Enumerates processes in the execution trace.
+
+    def extract_process_features(self, ph: ProcessHandle) -> Iterator[tuple[Feature, Address]]: ...
+    # Yields features for the given process.
+
+    def get_process_name(self, ph: ProcessHandle) -> str: ...
+    # Returns the human-readable process name (e.g., filename).
+
+    def get_threads(self, ph: ProcessHandle) -> Iterator[ThreadHandle]: ...
+    # Enumerates threads within a process.
+
+    def extract_thread_features(self, ph: ProcessHandle, th: ThreadHandle) -> Iterator[tuple[Feature, Address]]: ...
+    # Yields features for the given thread.
+
+    def get_calls(self, ph: ProcessHandle, th: ThreadHandle) -> Iterator[CallHandle]: ...
+    # Enumerates API calls within a thread.
+
+    def extract_call_features(self, ph: ProcessHandle, th: ThreadHandle, ch: CallHandle) -> Iterator[tuple[Feature, Address]]: ...
+    # Yields features for a single API call.
+
+    def get_call_name(self, ph: ProcessHandle, th: ThreadHandle, ch: CallHandle) -> str: ...
+    # Returns a human-readable call name, e.g. "CreateFile("C:\\temp\\x.exe", ...) -> 0x4".
+    ```
+  </Accordion>
+  <Accordion title="Non-abstract methods">
+    ```python
+    def get_sample_hashes(self) -> SampleHashes: ...
+    # Returns md5, sha1, sha256 for the sample.
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Handle types
+
+Opaque references passed between extractor methods. Use `.address` to get the numeric address.
+
+```python
+@dataclass
+class FunctionHandle:
+    address: Address
+    inner: Any       # extractor-specific data
+    ctx: dict[str, Any]
+
+@dataclass
+class BBHandle:
+    address: Address
+    inner: Any
+
+@dataclass
+class InsnHandle:
+    address: Address
+    inner: Any
+
+@dataclass
+class ProcessHandle:
+    address: ProcessAddress
+    inner: Any
+
+@dataclass
+class ThreadHandle:
+    address: ThreadAddress
+    inner: Any
+
+@dataclass
+class CallHandle:
+    address: DynamicCallAddress
+    inner: Any
+```
+
+### `SampleHashes`
+
+```python
+@dataclass
+class SampleHashes:
+    md5: str
+    sha1: str
+    sha256: str
+
+    @classmethod
+    def from_bytes(cls, buf: bytes) -> "SampleHashes": ...
+```
+
+---
+
+## `capa.render.result_document`
+
+### `ResultDocument`
+
+The top-level structured result of a capa analysis. Constructed from raw capabilities via `ResultDocument.from_capa()`, or loaded from a saved JSON file via `ResultDocument.from_file()`.
+
+```python
+class ResultDocument(FrozenModel):
+    meta: Metadata
+    rules: dict[str, RuleMatches]
+
+    @classmethod
+    def from_capa(
+        cls,
+        meta: Metadata,
+        rules: RuleSet,
+        capabilities: MatchResults,
+    ) -> "ResultDocument": ...
+
+    @classmethod
+    def from_file(cls, path: Path) -> "ResultDocument": ...
+
+    def to_capa(self) -> tuple[Metadata, Capabilities]: ...
+```
+
+<AccordionGroup>
+  <Accordion title="Fields">
+    | Field | Type | Description |
+    |---|---|---|
+    | `meta` | `Metadata` | Analysis metadata: timestamp, capa version, sample hashes, format/arch/OS, rules paths, layout. |
+    | `rules` | `dict[str, RuleMatches]` | Matched rules keyed by rule name. Each value contains the rule metadata, source YAML, and match locations. |
+  </Accordion>
+</AccordionGroup>
+
+### `Metadata` / `StaticMetadata` / `DynamicMetadata`
+
+```python
+class Metadata(Model):
+    timestamp: datetime.datetime
+    version: str
+    argv: Optional[tuple[str, ...]]
+    sample: Sample
+    flavor: Flavor          # Flavor.STATIC or Flavor.DYNAMIC
+    analysis: Analysis      # StaticAnalysis or DynamicAnalysis
+
+class StaticMetadata(Metadata):
+    flavor: Flavor = Flavor.STATIC
+    analysis: StaticAnalysis
+
+class DynamicMetadata(Metadata):
+    flavor: Flavor = Flavor.DYNAMIC
+    analysis: DynamicAnalysis
+```
+
+### `Sample`
+
+```python
+class Sample(Model):
+    md5: str
+    sha1: str
+    sha256: str
+    path: str
+```
+
+### `StaticAnalysis` / `DynamicAnalysis`
+
+```python
+class StaticAnalysis(Model):
+    format: str
+    arch: str
+    os: str
+    extractor: str                          # class name of the extractor used
+    rules: tuple[str, ...]                  # absolute paths to rule directories
+    base_address: frz.Address
+    layout: StaticLayout
+    feature_counts: StaticFeatureCounts
+    library_functions: tuple[LibraryFunction, ...]
+
+class DynamicAnalysis(Model):
+    format: str
+    arch: str
+    os: str
+    extractor: str
+    rules: tuple[str, ...]
+    layout: DynamicLayout
+    feature_counts: DynamicFeatureCounts
+```
+
+### `RuleMatches`
+
+```python
+class RuleMatches(FrozenModel):
+    meta: RuleMetadata
+    source: str                                      # raw rule YAML text
+    matches: tuple[tuple[frz.Address, Match], ...]   # (location, match_tree) pairs
+```
+
+### `RuleMetadata`
+
+```python
+class RuleMetadata(FrozenModel):
+    name: str
+    namespace: Optional[str]
+    authors: tuple[str, ...]
+    scopes: capa.rules.Scopes
+    attack: tuple[AttackSpec, ...]    # field alias: "att&ck"
+    mbc: tuple[MBCSpec, ...]
+    references: tuple[str, ...]
+    examples: tuple[str, ...]
+    description: str
+    lib: bool
+    is_subscope_rule: bool
+    maec: MaecMetadata
+```
+
+---
+
+## `capa.exceptions`
+
+All exceptions inherit from `ValueError` unless noted.
+
+<AccordionGroup>
+  <Accordion title="UnsupportedFormatError">
+    ```python
+    class UnsupportedFormatError(ValueError): ...
+    ```
+    Raised by `get_extractor()` when the input file format is not recognized or not supported by the selected backend.
+  </Accordion>
+  <Accordion title="UnsupportedArchError">
+    ```python
+    class UnsupportedArchError(ValueError): ...
+    ```
+    Raised by `get_extractor()` when the binary's CPU architecture is not supported.
+  </Accordion>
+  <Accordion title="UnsupportedOSError">
+    ```python
+    class UnsupportedOSError(ValueError): ...
+    ```
+    Raised by `get_extractor()` when the binary's target OS cannot be determined or is not supported.
+  </Accordion>
+  <Accordion title="EmptyReportError">
+    ```python
+    class EmptyReportError(ValueError): ...
+    ```
+    Raised by `get_extractor()` when a sandbox report (CAPE, DRAKVUF) contains no data to analyze.
+  </Accordion>
+  <Accordion title="InvalidArgument">
+    ```python
+    class InvalidArgument(ValueError): ...
+    ```
+    Raised when an argument combination is invalid, for example using process filters with static analysis or function filters with dynamic analysis.
+  </Accordion>
+  <Accordion title="UnsupportedRuntimeError">
+    ```python
+    class UnsupportedRuntimeError(RuntimeError): ...
+    ```
+    Raised when capa is running in an unsupported runtime environment. Inherits from `RuntimeError`, not `ValueError`.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+<CardGroup cols={2}>
+  <Card title="Library usage guide" icon="book-open" href="/api/library-usage">
+    End-to-end examples and common patterns for using capa as a library.
+  </Card>
+  <Card title="Backends overview" icon="server" href="/backends/overview">
+    Which backend to choose for each input format and use case.
+  </Card>
+</CardGroup>

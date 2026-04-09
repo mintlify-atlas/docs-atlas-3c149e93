@@ -1,0 +1,174 @@
+---
+title: "Frequently Asked Questions"
+description: "Common questions about capa, its use, safety, file format support, rules, and more."
+keywords: ["faq", "antivirus", "safe", "rules", "formats", "packed", "python", "library"]
+---
+
+<AccordionGroup>
+
+  <Accordion title="Why does capa trigger my antivirus?">
+    The purpose of capa is to analyze the capabilities of a potentially malicious application or file. To achieve this, it must include portions of the data it is designed to detect as a basis for comparison.
+
+    The release version of capa comes with embedded rules designed to detect common malware functionality. These rules contain patterns similar to malware signatures and may trigger antivirus alerts. Additionally, antivirus and Endpoint Detection and Response (EDR) products may alert on the way capa is packaged using PyInstaller.
+
+    This behavior is expected and does not indicate that capa itself is malicious.
+  </Accordion>
+
+  <Accordion title="Is capa safe to use?">
+    Yes. capa is an open-source tool developed and maintained by Mandiant. Its source code is publicly available on GitHub, allowing anyone to inspect it.
+
+    We recommend downloading releases only from the [official GitHub releases page](https://github.com/mandiant/capa/releases). Alternatively, you can install capa via pip or build it yourself from source. Because the project is fully open-source, all logic is transparent and auditable.
+  </Accordion>
+
+  <Accordion title="How can I ensure capa is a benign program?">
+    To verify capa's integrity:
+
+    - Download releases exclusively from the [capa GitHub releases page](https://github.com/mandiant/capa/releases).
+    - Build capa yourself from source using the instructions in the repository.
+    - Use pip to install directly from PyPI (`pip install capa`).
+
+    For additional confidence, you can submit the capa binary to [VirusTotal](https://www.virustotal.com) to analyze it against numerous antivirus engines, sandboxes, and other tools. It is worth noting that capa itself operates within VirusTotal as part of its analysis pipeline.
+  </Accordion>
+
+  <Accordion title="How do I interpret VirusTotal output for capa?">
+    VirusTotal tests files against a large number of antivirus engines and sandboxes. Antivirus detections often provide limited insight into *why* a file was flagged.
+
+    For a deeper understanding:
+
+    1. Look at the **dynamic analysis results** produced by sandboxes on the VirusTotal **Behavior** tab.
+    2. Use those sandbox traces to double-check alerts and understand what triggered detections.
+    3. Keep in mind that heuristic engines may flag capa based on its embedded rule patterns rather than any genuine malicious behavior.
+  </Accordion>
+
+  <Accordion title="What file formats does capa support?">
+    capa supports a wide range of file formats for static analysis:
+
+    - **PE files** — Windows executables (`.exe`, `.dll`, `.sys`, etc.)
+    - **ELF files** — Linux and other Unix-like executables
+    - **.NET binaries** — Managed executables analyzed via dnfile
+    - **shellcode** — Raw x86/x64 shellcode
+
+    For dynamic analysis, capa can analyze output from:
+
+    - **CAPE sandbox** — JSON reports
+    - **VMRay sandbox** — Archive submissions
+
+    capa also integrates as a plugin or backend with IDA Pro, Ghidra, and Binary Ninja for interactive analysis.
+
+    <Note>
+      capa warns when it encounters file formats it cannot handle well, such as installers, AutoIt-compiled programs, and packed executables. See [Limitations](/reference/limitations) for details.
+    </Note>
+  </Accordion>
+
+  <Accordion title="What's the difference between static and dynamic analysis in capa?">
+    **Static analysis** examines a binary file directly without executing it. capa disassembles the file, extracts features (API calls, strings, byte patterns, etc.), and matches them against rules. This works offline and does not require running potentially malicious code.
+
+    **Dynamic analysis** examines the *behavior* of a program as it runs. capa reads the output reports from sandboxes (CAPE, VMRay) and matches behavioral features — such as API call sequences across threads — against rules. This captures capabilities that only manifest at runtime, such as those hidden by packing or obfuscation.
+
+    You can use both modes together for more complete coverage.
+  </Accordion>
+
+  <Accordion title="How do I update the rules?">
+    capa rules are distributed separately from the capa binary, in the [capa-rules](https://github.com/mandiant/capa-rules) repository. The rules are versioned to match the capa release they were designed for.
+
+    To update:
+
+    ```bash
+    # If using pip-installed capa, the rules are bundled automatically.
+    # To use a custom or updated rules directory, pass the path explicitly:
+    capa --rules /path/to/updated/capa-rules <sample>
+    ```
+
+    For the standalone binary, download the matching rules archive from the [GitHub releases page](https://github.com/mandiant/capa/releases) and point capa to that directory.
+
+    <Note>
+      Always match the rules version to your capa version. See the question below on version matching for details.
+    </Note>
+  </Accordion>
+
+  <Accordion title="How do I match the rules version to my capa version?">
+    capa and capa-rules use synchronized version numbers. For example, capa v9.4.0 should be used with capa-rules v9.4.0.
+
+    Using mismatched versions may cause rules to fail to load or produce unexpected results, because rule syntax and feature support evolve alongside capa itself.
+
+    - Check your installed capa version: `capa --version`
+    - Download the matching rules from the [releases page](https://github.com/mandiant/capa/releases), where each capa release links to the corresponding rules archive.
+  </Accordion>
+
+  <Accordion title="How do I write my own rules?">
+    capa rules are written in YAML. Each rule describes a set of features that must be present for the rule to match.
+
+    A minimal example:
+
+    ```yaml
+    rule:
+      meta:
+        name: create a process
+        scopes:
+          static: function
+          dynamic: process
+        authors:
+          - your-name
+        description: Detect process creation via the Windows API.
+      features:
+        - or:
+          - api: CreateProcess
+          - api: CreateProcessA
+          - api: CreateProcessW
+    ```
+
+    See the [Writing Rules](/rules/writing-rules) guide and [Rule Format](/rules/rule-format) reference for full documentation, including available feature types, scopes, and metadata fields.
+  </Accordion>
+
+  <Accordion title="How do I use capa as a Python library?">
+    capa exposes a Python API that lets you integrate capability detection into your own tooling.
+
+    ```python
+    import capa.main
+    import capa.rules
+    import capa.loader
+
+    rules = capa.rules.RuleSet([...])  # load your rules
+    # See the library usage guide for a complete working example
+    ```
+
+    See the [Library Usage](/api/library-usage) guide for a full walkthrough, including how to load rules, select a backend, and interpret results programmatically.
+  </Accordion>
+
+  <Accordion title="What is capa Explorer Web?">
+    capa Explorer Web is a browser-based interface for exploring capa result documents (JSON output). It allows you to:
+
+    - Browse matched capabilities and their locations in the binary
+    - Filter and search across rules, namespaces, ATT&CK techniques, and MBC behaviors
+    - View detailed feature matches without needing IDA Pro or another disassembler
+
+    You can use capa Explorer Web directly at [mandiant.github.io/capa](https://mandiant.github.io/capa/) by uploading a capa JSON result file, or by opening a VirusTotal URL for a file that has been analyzed by capa.
+  </Accordion>
+
+  <Accordion title="What does it mean when capa says a sample is packed?">
+    When capa detects that a sample may be packed, it means the binary has been compressed or obfuscated in a way that hides its actual code from static analysis. Common packers include UPX, Themida, and custom protectors.
+
+    In this state, capa's results are likely incomplete — the real capabilities of the malware are concealed inside the unpacked payload, which capa cannot fully reach.
+
+    <Warning>
+      Do not treat capa's output for a packed sample as a complete picture of its capabilities. Important behaviors may be missing.
+    </Warning>
+
+    **Recommended steps:**
+
+    1. Attempt to statically unpack the sample using an appropriate tool.
+    2. If static unpacking is not possible, run the sample in a sandbox and use capa's dynamic analysis mode on the resulting report.
+
+    See [Limitations — Packed programs](/reference/limitations) for more detail.
+  </Accordion>
+
+  <Accordion title="How do I contribute to capa?">
+    Contributions to capa are welcome in several forms:
+
+    - **New rules** — Submit rules to the [capa-rules](https://github.com/mandiant/capa-rules) repository. Follow the [rule format](https://github.com/mandiant/capa-rules/blob/master/doc/format.md) and include test samples where possible.
+    - **Bug reports and feature requests** — Open an issue on the [capa GitHub repository](https://github.com/mandiant/capa/issues).
+    - **Code contributions** — Fork the repository, make your changes, and open a pull request. Review the `CONTRIBUTING.md` file in the repository for guidelines on setting up a development environment, running tests, and the code review process.
+    - **Taxonomy mappings** — If you find a rule with a missing or incorrect ATT&CK, MBC, or MAEC mapping, a pull request to capa-rules is a great contribution.
+  </Accordion>
+
+</AccordionGroup>

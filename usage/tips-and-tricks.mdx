@@ -1,0 +1,250 @@
+---
+title: "Tips and tricks"
+description: "Practical techniques for filtering rules, speeding up analysis, working with sandbox reports, and integrating capa into pipelines."
+---
+
+## Filter rules with `-t`
+
+Use the `-t` flag to run only rules that match a given metadata value. The filter matches against any `rule.meta.*` field — including `name`, `namespace`, `authors`, `att&ck`, and `mbc`. This is the fastest way to narrow capa's analysis to a specific area.
+
+```bash
+# Run only rules in the "communication" namespace
+capa -t communication suspicious.exe
+
+# Run only rules matching a rule name
+capa -t "create TCP socket" suspicious.exe
+
+# Run only rules authored by a specific analyst
+capa -t william.ballenthin@mandiant.com suspicious.exe
+
+# Run only rules mapped to a specific ATT&CK technique
+capa -t "Defense Evasion" suspicious.exe
+```
+
+<Tip>
+Combining `-t` with `-v` is effective during rule development. You can run a single rule against a known sample and see exactly where it matched — without waiting for a full analysis pass.
+</Tip>
+
+---
+
+## Analyze specific functions with `--restrict-to-functions`
+
+When you only want to understand the capabilities of a particular function, use `--restrict-to-functions` with a comma-separated list of virtual addresses. This is especially useful for investigating large, complex functions without paying the cost of a full binary scan.
+
+Copy the virtual addresses from your disassembler of choice and pass them directly:
+
+```bash
+capa suspicious.exe --restrict-to-functions 0x4019C0,0x401CD0
+```
+
+Add `-v` to see the match addresses within those functions:
+
+```bash
+capa suspicious.exe --restrict-to-functions 0x4019C0 -v
+```
+
+<Note>
+`--restrict-to-functions` is only valid for static analysis. It cannot be combined with `--restrict-to-processes`.
+</Note>
+
+---
+
+## Analyze specific processes with `--restrict-to-processes`
+
+When analyzing sandbox reports, a single report often contains activity from dozens of processes — many of which are benign system processes. Use `--restrict-to-processes` to focus analysis on the malware's own PIDs and skip everything else.
+
+Pick the process IDs from the sandbox-generated process tree (or from the sandbox-reported malware PID) and pass them to capa:
+
+```bash
+capa report.json --restrict-to-processes 3888,3214,4299
+```
+
+Add `-v` to see which threads are performing which actions (encrypting data, opening connections, etc.):
+
+```bash
+capa report.json --restrict-to-processes 3888 -v
+```
+
+This significantly reduces analysis time and noise for large sandbox reports.
+
+<Note>
+`--restrict-to-processes` is only valid for dynamic analysis (sandbox reports). It cannot be combined with `--restrict-to-functions`.
+</Note>
+
+---
+
+## Speed up repeated analysis with `CAPA_SAVE_WORKSPACE`
+
+Set the `CAPA_SAVE_WORKSPACE` environment variable to instruct the underlying analysis engine to cache its intermediate results to disk. With Vivisect, this creates a `.viv` file alongside your binary. Subsequent runs against the same file load the cached workspace rather than re-disassembling from scratch.
+
+```bash
+# Enable workspace saving
+CAPA_SAVE_WORKSPACE=1 capa suspicious.exe
+
+# Subsequent runs are significantly faster
+CAPA_SAVE_WORKSPACE=1 capa -t communication suspicious.exe
+CAPA_SAVE_WORKSPACE=1 capa -r ./new-rules/ suspicious.exe
+```
+
+This is particularly useful during **rule development**, where you run capa repeatedly against the same sample to test a rule. The first run takes full analysis time; subsequent runs reuse the cached workspace.
+
+<Tip>
+`.viv` files are saved in the same directory as the binary. Set `CAPA_SAVE_WORKSPACE=0` or `CAPA_SAVE_WORKSPACE=no` to disable caching even if the variable is already set in your environment.
+</Tip>
+
+---
+
+## Run capa against sandbox reports
+
+capa can analyze dynamic sandbox reports from CAPE, DRAKVUF, and VMRay in addition to static binaries. This lets you identify behaviors that are only observable at runtime — such as dynamically resolved APIs, in-memory unpacking, or C2 communication patterns.
+
+<Tabs>
+  <Tab title="CAPE">
+    ```bash
+    # Auto-detected
+    capa report.json
+
+    # Explicit format
+    capa -f cape report.json
+
+    # Focus on the malware process
+    capa -f cape report.json --restrict-to-processes 1234
+    ```
+  </Tab>
+  <Tab title="DRAKVUF">
+    ```bash
+    capa -f drakvuf report.log
+    ```
+  </Tab>
+  <Tab title="VMRay">
+    ```bash
+    capa -f vmray summary_v2.json
+    ```
+  </Tab>
+</Tabs>
+
+capa detects sandbox report formats automatically in most cases. Use `-f` to override when auto-detection fails.
+
+<Note>
+Dynamic analysis rules use different scopes than static rules — `process`, `thread`, `call`, and `span-of-calls`. Some rules are written specifically for dynamic analysis and won't match against static binaries, and vice versa.
+</Note>
+
+---
+
+## Use capa in a pipeline with JSON output and `jq`
+
+The `-j` flag emits a complete, structured JSON result document. Combined with `jq`, you can extract specific information from capa results in scripts and pipelines.
+
+```bash
+# List all matched rule names
+capa -j suspicious.exe | jq '.rules | keys[]'
+
+# List ATT&CK techniques from matched rules
+capa -j suspicious.exe | jq '[.rules[].meta."att&ck"[].id] | unique[]'
+
+# Check if a specific capability was detected
+capa -j suspicious.exe | jq '.rules | has("encode data using XOR")'
+
+# Count matched rules
+capa -j suspicious.exe | jq '.rules | length'
+
+# Extract all matched namespaces
+capa -j suspicious.exe | jq '[.rules[].meta.namespace] | unique[]'
+
+# Save results and re-render later
+capa -j suspicious.exe > results.json
+capa -v results.json
+```
+
+<Tip>
+Use `capa -q -j suspicious.exe` in scripts to suppress progress messages and get only JSON on stdout.
+</Tip>
+
+---
+
+## Re-render saved results without re-analysis
+
+If you already have a JSON result file, you can render it at any verbosity level without re-running the analysis. capa detects the `result` format automatically:
+
+```bash
+# Save the result once
+capa -j suspicious.exe > results.json
+
+# Render at different verbosity levels — no re-analysis needed
+capa results.json           # default tables
+capa -v results.json        # verbose
+capa -vv results.json       # very verbose
+capa -j results.json        # re-emit JSON
+```
+
+This is useful when you want to share results with a colleague and let them explore at different verbosity levels without access to the original binary.
+
+---
+
+## Handle packed binaries
+
+When capa detects a packed or obfuscated binary, it emits a warning and exits early by default. This avoids false results from analyzing compressed code.
+
+```
+WARN  capa encountered warnings during analysis
+      ...
+      packer detected: UPX; analysis may be inaccurate
+```
+
+To see what capa found despite the packing warning, use `-v`, `-vv`, or `-j`:
+
+```bash
+# Force analysis to continue and show all results
+capa -v suspicious.exe
+capa -j suspicious.exe
+```
+
+For best results with packed binaries:
+- Unpack the binary first using a tool like UPX, then run capa on the unpacked result
+- Alternatively, run the binary in a sandbox and analyze the sandbox report dynamically
+
+<Warning>
+Results from analyzing a packed binary without unpacking first may be incomplete or misleading. capa can only analyze code it can disassemble — compressed or encrypted sections are opaque to static analysis.
+</Warning>
+
+---
+
+## Match rules version to capa version
+
+The capa rule set is maintained separately in the [mandiant/capa-rules](https://github.com/mandiant/capa-rules) repository and evolves alongside capa. Rules written for one major version of capa may not load correctly on a different major version.
+
+Always use rules that correspond to your installed capa version:
+
+```bash
+# Check your capa version
+capa --version
+
+# Download matching rules from GitHub releases
+# https://github.com/mandiant/capa-rules/releases
+
+# Point capa at the downloaded rule set
+capa -r ./capa-rules-v7.0.0/ suspicious.exe
+```
+
+If capa reports a rule loading error, the most common cause is a version mismatch between the tool and the rule set.
+
+---
+
+## Use capa as a library
+
+You can integrate capa into your own Python tools by importing it as a library. See the [library usage guide](/api/library-usage) for details.
+
+<CardGroup cols={2}>
+  <Card title="CLI reference" icon="terminal" href="/usage/cli-reference">
+    Complete flag reference for the capa command
+  </Card>
+  <Card title="Output formats" icon="file-text" href="/usage/output-formats">
+    Default, verbose, very verbose, and JSON output explained
+  </Card>
+  <Card title="Backends overview" icon="microchip" href="/backends/overview">
+    Vivisect, IDA, Ghidra, Binary Ninja, and sandbox backends
+  </Card>
+  <Card title="Writing rules" icon="pencil" href="/rules/writing-rules">
+    Author your own capa detection rules
+  </Card>
+</CardGroup>

@@ -1,0 +1,102 @@
+---
+title: "Limitations"
+description: "Known limitations of capa and workarounds where available."
+keywords: ["limitations", "packed", "installers", "wrapper functions", "loop scope", "ATT&CK", "MBC"]
+---
+
+capa is a powerful static and dynamic analysis tool, but there are several cases where its results may be incomplete or misleading. Understanding these limitations helps you interpret results accurately and apply appropriate workarounds.
+
+## Packed programs
+
+Packed programs have often been obfuscated to hide their logic. Since capa cannot handle obfuscation well, results may be misleading or incomplete.
+
+<Warning>
+  If capa detects that a program may be packed, it will warn you before displaying results. Treat those results with skepticism — important capabilities may be hidden or misreported.
+</Warning>
+
+**Workaround:** If possible, unpack the input file before analyzing it with capa.
+
+<Steps>
+  <Step title="Run capa and check for packing warnings">
+    Execute capa on the sample. If a packing warning appears, treat the results as potentially incomplete.
+  </Step>
+  <Step title="Unpack the sample">
+    Use an unpacker tool appropriate for the detected packer (e.g., UPX, custom scripts) to extract the underlying executable.
+  </Step>
+  <Step title="Re-analyze the unpacked sample">
+    Run capa again on the unpacked binary for more reliable results.
+  </Step>
+  <Step title="Use a sandbox for stubborn samples">
+    For samples that cannot be statically unpacked, submit them to a dynamic sandbox. Use capa's dynamic analysis mode against the sandbox output (e.g., CAPE or VMRay results) to capture capabilities at runtime.
+  </Step>
+</Steps>
+
+## Installers, run-time programs, and similar formats
+
+capa cannot handle installers, run-time programs, or other packaged applications (such as those built with AutoIt) well. Results for these file types may be misleading or incomplete.
+
+<Warning>
+  If capa detects an installer or run-time program, it will warn you. The capabilities reported may reflect the installer framework itself rather than the payload being delivered.
+</Warning>
+
+These formats typically bundle executable code in a way that capa's static analysis cannot fully follow. The safest approach is to extract and analyze individual payloads separately, or to run the sample in a sandbox and use capa's dynamic analysis backend against the resulting trace.
+
+## Wrapper functions and matches in child functions
+
+capa currently does not analyze nested function calls — that is, it does not propagate capability matches from child functions up to parent functions.
+
+Consider the following call tree where `f1` calls a wrapper function `f2` and the `CreateProcess` API directly. `f2` internally calls `CreateFile` and `WriteFile`:
+
+```
+f1
+  f2 (WriteFile wrapper)
+    CreateFile
+    WriteFile
+  CreateProcess
+```
+
+In this case, capa **will not** match a rule that requires both file creation and process execution on `f1`, even though `f1` is responsible for both behaviors through its calls.
+
+This pattern is common in real-world software because:
+
+- Programmers often wrap API calls in utility or helper functions.
+- Certain compilers and languages (such as Go) produce deeply layered call chains.
+
+<Note>
+  Adding full child-function propagation raises significant design questions — such as how to assign matches from child to parent functions — and would substantially increase analysis time and rule-matching complexity. The capa team is tracking this and gathering real-world samples to evaluate the impact.
+</Note>
+
+## Loop scope
+
+Encryption, encoding, and data-processing functions often contain loops, and it would be beneficial to match capa rules against the body of a loop specifically. However, tracking all basic blocks that belong to a loop — especially with nested loop constructs — is not straightforward.
+
+**Current workaround:** capa provides the `characteristic(loop)` feature, which lets rule authors filter on functions that contain a loop. This is a coarser-grained signal than a dedicated loop scope, but it serves as a practical compromise.
+
+```yaml
+rule:
+  meta:
+    name: encrypted data in loop
+    ...
+  features:
+    - and:
+      - characteristic: loop
+      - api: CryptEncrypt
+```
+
+<Note>
+  A full loop scope feature requires more practical use cases and test samples to justify the additional implementation complexity. Contributions and sample data are welcome.
+</Note>
+
+## ATT&CK, MBC, MAEC, and other capability tagging
+
+capa uses namespaces to group capabilities. The `rule.meta` block also supports `att&ck`, `mbc`, and `maec` fields to associate rules with their respective taxonomies.
+
+There are inherent limitations to these mappings:
+
+- **Coverage gaps:** Not every rule has an ATT&CK, MBC, or MAEC mapping. Absence of a tag does not mean the behavior is unclassified — it may simply not have been mapped yet.
+- **Taxonomy evolution:** ATT&CK, MBC, and MAEC are updated independently of capa rules. A rule's tags may become stale or imprecise as taxonomies evolve.
+- **Granularity mismatch:** Taxonomy entries are sometimes broader or narrower than what a given capa rule detects, leading to approximate rather than exact mappings.
+
+<Note>
+  If you find a rule with a missing or incorrect taxonomy tag, contributions to the [capa-rules](https://github.com/mandiant/capa-rules) repository are welcome. See the [rule format documentation](https://github.com/mandiant/capa-rules/blob/master/doc/format.md#meta-block) for details on the `meta` block.
+</Note>

@@ -1,0 +1,407 @@
+---
+title: "Using capa as a Library"
+description: "Integrate capa's capability detection directly into Python scripts and tools."
+---
+
+capa can be used as a Python library, letting you programmatically analyze binaries and process the results without invoking the CLI.
+
+## Installation
+
+```bash
+pip install flare-capa
+```
+
+<Warning>
+  `pip install flare-capa` installs the capa Python package but does **not** bundle the capa rules. You must download the rules separately. Get the latest rules from the [capa-rules releases page](https://github.com/mandiant/capa-rules/releases) and note the directory path — you'll pass it to `capa.rules.get_rules()`.
+</Warning>
+
+## How it works
+
+The library usage follows four steps:
+
+<Steps>
+  <Step title="Load rules from a directory">
+    Parse YAML rule files from disk into a `RuleSet` using `capa.rules.get_rules()`.
+  </Step>
+  <Step title="Get a feature extractor for the sample">
+    Use `capa.loader.get_extractor()` to create a backend-specific extractor for the input file. The extractor handles disassembly or sandbox report parsing.
+  </Step>
+  <Step title="Find capabilities">
+    Pass the ruleset and extractor to `capa.capabilities.common.find_capabilities()`. This returns a `Capabilities` object containing all matched rules and feature counts.
+  </Step>
+  <Step title="Process or render results">
+    Convert the raw capabilities into a `ResultDocument` or render directly to JSON, text table, or a Python dictionary.
+  </Step>
+</Steps>
+
+## Complete working example
+
+This is the canonical library usage example from [`scripts/capa-as-library.py`](https://github.com/mandiant/capa/blob/master/scripts/capa-as-library.py).
+
+### Core analysis function
+
+```python
+import json
+import collections
+from typing import Any
+from pathlib import Path
+
+import capa.main
+import capa.rules
+import capa.engine
+import capa.loader
+import capa.features
+import capa.render.json
+import capa.render.utils as rutils
+import capa.render.default
+import capa.capabilities.common
+import capa.render.result_document as rd
+import capa.features.freeze.features as frzf
+from capa.features.common import OS_AUTO, FORMAT_AUTO
+
+
+def capa_details(rules_path: Path, input_file: Path, output_format="dictionary"):
+    # load rules from disk
+    rules = capa.rules.get_rules([rules_path])
+
+    # extract features and find capabilities
+    extractor = capa.loader.get_extractor(
+        input_file, FORMAT_AUTO, OS_AUTO, capa.main.BACKEND_VIV, [], should_save_workspace=False, disable_progress=True
+    )
+    capabilities = capa.capabilities.common.find_capabilities(rules, extractor, disable_progress=True)
+
+    # collect metadata (used only to make rendering more complete)
+    meta = capa.loader.collect_metadata([], input_file, FORMAT_AUTO, OS_AUTO, [rules_path], extractor, capabilities)
+    meta.analysis.layout = capa.loader.compute_layout(rules, extractor, capabilities.matches)
+
+    capa_output: Any = False
+
+    if output_format == "dictionary":
+        # render as python dictionary
+        doc = rd.ResultDocument.from_capa(meta, rules, capabilities.matches)
+        capa_output = render_dictionary(doc)
+    elif output_format == "json":
+        # render as JSON string
+        capa_output = json.loads(capa.render.json.render(meta, rules, capabilities.matches))
+    elif output_format == "texttable":
+        # render as human-readable text table
+        capa_output = capa.render.default.render(meta, rules, capabilities.matches)
+
+    return capa_output
+```
+
+### Result rendering helpers
+
+The dictionary format is a simplified representation suitable for downstream processing:
+
+```python
+def render_meta(doc: rd.ResultDocument, result):
+    result["md5"] = doc.meta.sample.md5
+    result["sha1"] = doc.meta.sample.sha1
+    result["sha256"] = doc.meta.sample.sha256
+    result["path"] = doc.meta.sample.path
+
+
+def find_subrule_matches(doc: rd.ResultDocument) -> set[str]:
+    """
+    Collect rule names matched as subrule matches to avoid duplicate output.
+    """
+    matches = set()
+
+    def rec(node: rd.Match):
+        if not node.success:
+            return
+        elif isinstance(node.node, rd.StatementNode):
+            for child in node.children:
+                rec(child)
+        elif isinstance(node.node, rd.FeatureNode):
+            if isinstance(node.node.feature, frzf.MatchFeature):
+                matches.add(node.node.feature.match)
+
+    for rule in rutils.capability_rules(doc):
+        for _, node in rule.matches:
+            rec(node)
+
+    return matches
+
+
+def render_capabilities(doc: rd.ResultDocument, result):
+    subrule_matches = find_subrule_matches(doc)
+    result["CAPABILITY"] = {}
+    for rule in rutils.capability_rules(doc):
+        if rule.meta.name in subrule_matches:
+            continue
+        count = len(rule.matches)
+        if count == 1:
+            capability = rule.meta.name
+        else:
+            capability = f"{rule.meta.name} ({count} matches)"
+        result["CAPABILITY"].setdefault(rule.meta.namespace, [])
+        result["CAPABILITY"][rule.meta.namespace].append(capability)
+
+
+def render_attack(doc, result):
+    result["ATTCK"] = {}
+    tactics = collections.defaultdict(set)
+    for rule in rutils.capability_rules(doc):
+        if not rule.meta.attack:
+            continue
+        for attack in rule.meta.attack:
+            tactics[attack.tactic].add((attack.technique, attack.subtechnique, attack.id))
+    for tactic, techniques in sorted(tactics.items()):
+        inner_rows = []
+        for technique, subtechnique, id in sorted(techniques):
+            if subtechnique is None:
+                inner_rows.append(f"{technique} {id}")
+            else:
+                inner_rows.append(f"{technique}::{subtechnique} {id}")
+        result["ATTCK"].setdefault(tactic.upper(), inner_rows)
+
+
+def render_mbc(doc, result):
+    result["MBC"] = {}
+    objectives = collections.defaultdict(set)
+    for rule in rutils.capability_rules(doc):
+        if not rule.meta.mbc:
+            continue
+        for mbc in rule.meta.mbc:
+            objectives[mbc.objective].add((mbc.behavior, mbc.method, mbc.id))
+    for objective, behaviors in sorted(objectives.items()):
+        inner_rows = []
+        for behavior, method, id in sorted(behaviors):
+            if method is None:
+                inner_rows.append(f"{behavior} [{id}]")
+            else:
+                inner_rows.append(f"{behavior}::{method} [{id}]")
+        result["MBC"].setdefault(objective.upper(), inner_rows)
+
+
+def render_dictionary(doc: rd.ResultDocument) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    render_meta(doc, result)
+    render_attack(doc, result)
+    render_mbc(doc, result)
+    render_capabilities(doc, result)
+    return result
+```
+
+### Running from the command line
+
+```python
+if __name__ == "__main__":
+    import sys
+    import argparse
+
+    RULES_PATH = capa.main.get_default_root() / "rules"
+
+    parser = argparse.ArgumentParser(description="Extract capabilities from a file")
+    parser.add_argument("input_file", help="file to extract capabilities from")
+    parser.add_argument("--rules", help="path to rules directory", default=RULES_PATH)
+    parser.add_argument(
+        "--output", help="output format", choices=["dictionary", "json", "texttable"], default="dictionary"
+    )
+    args = parser.parse_args()
+    if args.rules != RULES_PATH:
+        args.rules = Path(args.rules)
+    print(capa_details(args.rules, Path(args.input_file), args.output))
+    sys.exit(0)
+```
+
+## Common patterns
+
+### Loading rules
+
+Use `capa.rules.get_rules()` with a list of paths to rule files or directories:
+
+```python
+from pathlib import Path
+import capa.rules
+
+rules_path = Path("/path/to/capa-rules")
+rules = capa.rules.get_rules([rules_path])
+```
+
+<Tip>
+  `get_rules()` accepts a list so you can load rules from multiple directories at once. It recursively searches directories for `.yml` rule files and caches the compiled ruleset for subsequent runs.
+</Tip>
+
+### Getting an extractor
+
+`capa.loader.get_extractor()` instantiates the correct backend extractor for a given file:
+
+```python
+from pathlib import Path
+import capa.loader
+from capa.features.common import OS_AUTO, FORMAT_AUTO
+from capa.loader import BACKEND_VIV
+
+extractor = capa.loader.get_extractor(
+    input_path=Path("suspicious.exe"),
+    input_format=FORMAT_AUTO,   # detect format automatically
+    os_=OS_AUTO,                # detect OS automatically
+    backend=BACKEND_VIV,        # use vivisect for static analysis
+    sigpaths=[],                # optional FLIRT signature paths
+    should_save_workspace=False,
+    disable_progress=True,
+)
+```
+
+### Running analysis
+
+```python
+import capa.capabilities.common
+
+capabilities = capa.capabilities.common.find_capabilities(
+    rules,
+    extractor,
+    disable_progress=True,
+)
+
+# capabilities.matches: dict[str, list[tuple[Address, Result]]]
+# capabilities.feature_counts: StaticFeatureCounts | DynamicFeatureCounts
+# capabilities.library_functions: tuple[LibraryFunction, ...] | None
+```
+
+### Rendering results
+
+<Tabs>
+  <Tab title="Dictionary">
+    ```python
+    import capa.render.result_document as rd
+
+    meta = capa.loader.collect_metadata([], input_file, FORMAT_AUTO, OS_AUTO, [rules_path], extractor, capabilities)
+    meta.analysis.layout = capa.loader.compute_layout(rules, extractor, capabilities.matches)
+
+    doc = rd.ResultDocument.from_capa(meta, rules, capabilities.matches)
+    # doc.meta.sample.md5, doc.meta.sample.sha256, etc.
+    # iterate doc.rules for matched rule names and locations
+    ```
+  </Tab>
+  <Tab title="JSON">
+    ```python
+    import json
+    import capa.render.json
+
+    meta = capa.loader.collect_metadata([], input_file, FORMAT_AUTO, OS_AUTO, [rules_path], extractor, capabilities)
+    meta.analysis.layout = capa.loader.compute_layout(rules, extractor, capabilities.matches)
+
+    json_output = json.loads(capa.render.json.render(meta, rules, capabilities.matches))
+    ```
+  </Tab>
+  <Tab title="Text table">
+    ```python
+    import capa.render.default
+
+    meta = capa.loader.collect_metadata([], input_file, FORMAT_AUTO, OS_AUTO, [rules_path], extractor, capabilities)
+    meta.analysis.layout = capa.loader.compute_layout(rules, extractor, capabilities.matches)
+
+    text_output = capa.render.default.render(meta, rules, capabilities.matches)
+    print(text_output)
+    ```
+  </Tab>
+</Tabs>
+
+## Backend selection
+
+The backend controls how capa disassembles or parses the input file. For most library use cases, `BACKEND_VIV` (vivisect) is the right choice for static analysis of PE and ELF binaries.
+
+<Tabs>
+  <Tab title="Static analysis">
+    ```python
+    from capa.loader import BACKEND_VIV, BACKEND_DOTNET, BACKEND_PEFILE
+
+    # General PE/ELF static analysis (default)
+    extractor = capa.loader.get_extractor(path, FORMAT_AUTO, OS_AUTO, BACKEND_VIV, [])
+
+    # .NET binaries
+    extractor = capa.loader.get_extractor(path, FORMAT_AUTO, OS_AUTO, BACKEND_DOTNET, [])
+
+    # File-scope features only (fast, no code analysis)
+    extractor = capa.loader.get_extractor(path, FORMAT_AUTO, OS_AUTO, BACKEND_PEFILE, [])
+    ```
+  </Tab>
+  <Tab title="Dynamic / sandbox">
+    ```python
+    from capa.loader import BACKEND_CAPE, BACKEND_DRAKVUF, BACKEND_VMRAY
+
+    # CAPE sandbox report (JSON)
+    extractor = capa.loader.get_extractor(report_path, FORMAT_AUTO, OS_AUTO, BACKEND_CAPE, [])
+
+    # DRAKVUF sandbox report (JSONL)
+    extractor = capa.loader.get_extractor(report_path, FORMAT_AUTO, OS_AUTO, BACKEND_DRAKVUF, [])
+
+    # VMRay sandbox report (ZIP)
+    extractor = capa.loader.get_extractor(report_path, FORMAT_AUTO, OS_AUTO, BACKEND_VMRAY, [])
+    ```
+  </Tab>
+  <Tab title="Disassembler integrations">
+    ```python
+    from capa.loader import BACKEND_IDA, BACKEND_GHIDRA, BACKEND_BINJA, BACKEND_BINEXPORT2
+
+    # IDA via idalib (requires idalib installed)
+    extractor = capa.loader.get_extractor(path, FORMAT_AUTO, OS_AUTO, BACKEND_IDA, [])
+
+    # Ghidra via pyghidra (requires pyghidra installed)
+    extractor = capa.loader.get_extractor(path, FORMAT_AUTO, OS_AUTO, BACKEND_GHIDRA, [])
+
+    # Binary Ninja (requires binaryninja installed)
+    extractor = capa.loader.get_extractor(path, FORMAT_AUTO, OS_AUTO, BACKEND_BINJA, [])
+
+    # BinExport2 file from IDA/Ghidra/BN
+    extractor = capa.loader.get_extractor(path, FORMAT_AUTO, OS_AUTO, BACKEND_BINEXPORT2, [])
+    ```
+  </Tab>
+</Tabs>
+
+## Error handling
+
+Wrap calls to `get_extractor()` and `find_capabilities()` to handle common failure cases:
+
+```python
+from pathlib import Path
+
+import capa.rules
+import capa.loader
+import capa.capabilities.common
+from capa.features.common import OS_AUTO, FORMAT_AUTO
+from capa.loader import BACKEND_VIV
+from capa.exceptions import (
+    UnsupportedFormatError,
+    UnsupportedArchError,
+    UnsupportedOSError,
+    EmptyReportError,
+)
+
+def analyze(rules_path: Path, input_file: Path):
+    rules = capa.rules.get_rules([rules_path])
+
+    try:
+        extractor = capa.loader.get_extractor(
+            input_file, FORMAT_AUTO, OS_AUTO, BACKEND_VIV, [],
+            should_save_workspace=False, disable_progress=True,
+        )
+    except UnsupportedFormatError:
+        print("Unsupported file format — not a PE, ELF, or recognized format.")
+        return None
+    except UnsupportedArchError:
+        print("Unsupported architecture.")
+        return None
+    except UnsupportedOSError:
+        print("Unsupported operating system.")
+        return None
+    except EmptyReportError:
+        print("Sandbox report is empty.")
+        return None
+
+    capabilities = capa.capabilities.common.find_capabilities(rules, extractor, disable_progress=True)
+    return capabilities
+```
+
+<CardGroup cols={2}>
+  <Card title="API Reference" icon="code" href="/api/api-reference">
+    Full type signatures and parameters for every public module.
+  </Card>
+  <Card title="Backends overview" icon="server" href="/backends/overview">
+    Learn which backend to use for each input format.
+  </Card>
+</CardGroup>

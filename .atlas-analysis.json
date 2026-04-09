@@ -1,0 +1,94 @@
+{
+  "projectType": "cli-tool",
+  "projectName": "capa",
+  "projectDescription": "The FLARE team's open-source tool that automatically identifies capabilities in executable files using a rule-based matching engine for malware analysis and reverse engineering.",
+  "theme": "aspen",
+  "primaryColor": "#C62828",
+  "lightColor": "#FFCDD2",
+  "darkColor": "#7F0000",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Usage",
+            "pages": [
+              "usage/cli-reference",
+              "usage/output-formats",
+              "usage/tips-and-tricks"
+            ]
+          },
+          {
+            "group": "Analysis Backends",
+            "pages": [
+              "backends/overview",
+              "backends/dynamic-analysis",
+              "backends/ida-plugin",
+              "backends/ghidra-plugin",
+              "backends/binary-ninja"
+            ]
+          },
+          {
+            "group": "Rules",
+            "pages": [
+              "rules/overview",
+              "rules/writing-rules",
+              "rules/rule-format"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "reference/limitations",
+              "reference/faq",
+              "reference/changelog"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Python API",
+        "groups": [
+          {
+            "group": "Library Usage",
+            "pages": [
+              "api/library-usage",
+              "api/api-reference"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Automatic capability detection in PE, ELF, .NET, and shellcode files",
+    "MITRE ATT&CK and MBC technique mapping for detected capabilities",
+    "Dynamic analysis support via CAPE, DRAKVUF, and VMRay sandbox reports",
+    "Rule-based matching engine with a human-readable YAML rule format",
+    "Multiple analysis backends: Vivisect, IDA Pro, Ghidra, Binary Ninja, BinExport2",
+    "Interactive capa Explorer Web UI for sharing and exploring results",
+    "IDA Pro and Ghidra plugin integrations for in-tool interactive analysis",
+    "Library API for integrating capa into custom Python tooling"
+  ],
+  "publicApiSurface": [
+    "capa (CLI entrypoint)",
+    "capa.main:main",
+    "capa.rules.RuleSet",
+    "capa.loader (BACKEND_VIV, BACKEND_IDA, BACKEND_GHIDRA, BACKEND_BINJA, BACKEND_CAPE, BACKEND_DRAKVUF, BACKEND_VMRAY, BACKEND_DOTNET, BACKEND_FREEZE, BACKEND_PEFILE, BACKEND_BINEXPORT2)",
+    "capa.capabilities.common:find_capabilities",
+    "capa.features.extractors.base_extractor:FeatureExtractor",
+    "capa.features.extractors.base_extractor:StaticFeatureExtractor",
+    "capa.features.extractors.base_extractor:DynamicFeatureExtractor",
+    "capa.render.result_document (ResultDocument)",
+    "capa.render.json, capa.render.default, capa.render.verbose, capa.render.vverbose"
+  ]
+}

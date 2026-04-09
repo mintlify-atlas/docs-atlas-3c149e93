@@ -1,0 +1,175 @@
+---
+title: "Dynamic Analysis"
+description: "Run capa against sandbox execution reports from CAPE, DRAKVUF, and VMRay to identify capabilities in packed or obfuscated samples."
+keywords: ["dynamic analysis", "sandbox", "CAPE", "DRAKVUF", "VMRay", "packed", "obfuscated"]
+---
+
+## Static vs. dynamic analysis
+
+capa's static backends disassemble the binary on disk. This works well for most files, but fails when the sample is packed or obfuscated: the instructions visible on disk are not the instructions that actually execute.
+
+When capa detects a packed file, it emits a warning:
+
+```bash
+$ capa 05be49819139a3fdcdbddbdefd298398779521f3d68daa25275cc77508e42310.exe
+WARNING:capa.capabilities.common:--------------------------------------------------------------------------------
+WARNING:capa.capabilities.common: This sample appears to be packed.
+WARNING:capa.capabilities.common:
+WARNING:capa.capabilities.common: Packed samples have often been obfuscated to hide their logic.
+WARNING:capa.capabilities.common: capa cannot handle obfuscation well using static analysis. This means the results may be misleading or incomplete.
+WARNING:capa.capabilities.common: If possible, you should try to unpack this input file before analyzing it with capa.
+WARNING:capa.capabilities.common: Alternatively, run the sample in a supported sandbox and invoke capa against the report to obtain dynamic analysis results.
+WARNING:capa.capabilities.common:
+WARNING:capa.capabilities.common: Identified via rule: (internal) packer file limitation
+WARNING:capa.capabilities.common:
+WARNING:capa.capabilities.common: Use -v or -vv if you really want to see the capabilities identified by capa.
+WARNING:capa.capabilities.common:--------------------------------------------------------------------------------
+```
+
+The dynamic analysis workflow solves this: submit the sample to a sandbox, download the execution report, and run capa against the report. The sandbox captures API calls, process behavior, and memory artifacts at runtime, giving capa much richer data to match rules against.
+
+```bash
+# Static analysis fails on a packed file...
+$ capa 05be49819139a3fdcdbddbdefd298398779521f3d68daa25275cc77508e42310.exe
+# WARNING: This sample appears to be packed.
+
+# Dynamic analysis succeeds against the sandbox report:
+$ capa 05be49819139a3fdcdbddbdefd298398779521f3d68daa25275cc77508e42310.json
+```
+
+## Supported sandboxes
+
+capa supports three dynamic analysis backends:
+
+| Sandbox | Backend flag | Report format |
+|---------|-------------|---------------|
+| CAPE | `cape` | JSON (`.json`, `.json_`, `.json.gz`) |
+| DRAKVUF | `drakvuf` | JSONL log (`.log`, `.log.gz`) |
+| VMRay | `vmray` | Analysis archive (`.zip`) |
+
+## CAPE
+
+[CAPE](https://github.com/kevoreilly/CAPEv2) (Config and Payload Extraction) is an open-source malware sandbox built on Cuckoo Sandbox. It captures API call traces, memory dumps, and extracted payloads.
+
+**Supported report formats:** `.json`, `.json_`, `.json.gz`
+
+<Steps>
+  <Step title="Submit the sample">
+    Upload the sample to your CAPE instance and wait for the analysis to complete.
+  </Step>
+  <Step title="Download the report">
+    Download the JSON report from the CAPE web interface or API. The report file is typically named after the task ID and has a `.json` extension. Compressed variants (`.json_` and `.json.gz`) are also supported.
+  </Step>
+  <Step title="Run capa against the report">
+    capa automatically detects the CAPE format and selects the `cape` backend:
+
+    ```bash
+    capa report.json
+    ```
+
+    You can also pass the backend explicitly:
+
+    ```bash
+    capa --backend cape report.json
+    ```
+  </Step>
+</Steps>
+
+<Note>
+CAPE reports contain both static and dynamic analysis data. capa uses both to produce a complete capability picture. Tested CAPE versions include 2.2-CAPE, 2.4-CAPE, and 2.5-CAPE.
+</Note>
+
+## DRAKVUF
+
+[DRAKVUF](https://github.com/CERT-Polska/drakvuf-sandbox/) is an open-source dynamic malware analysis system that performs hardware-accelerated virtualization-based tracing without requiring an agent inside the VM.
+
+**Supported report formats:** `.log`, `.log.gz`
+
+<Steps>
+  <Step title="Submit the sample">
+    Upload the sample to your DRAKVUF sandbox instance and start an analysis task.
+  </Step>
+  <Step title="Download the log">
+    Download the DRAKVUF log file once analysis completes. The report is a JSONL-formatted log file (one JSON object per line).
+  </Step>
+  <Step title="Run capa against the log">
+    capa automatically detects the DRAKVUF format:
+
+    ```bash
+    capa drakvuf_report.log
+    ```
+
+    Or explicitly specify the backend:
+
+    ```bash
+    capa --backend drakvuf drakvuf_report.log
+    ```
+
+    Gzip-compressed logs are supported directly:
+
+    ```bash
+    capa drakvuf_report.log.gz
+    ```
+  </Step>
+</Steps>
+
+<Note>
+DRAKVUF reports do not include hash information for the analyzed sample. capa will proceed without sample hash metadata in the output.
+</Note>
+
+## VMRay
+
+[VMRay](https://www.vmray.com/) is a commercial malware analysis platform. It produces detailed behavioral reports packaged as ZIP archives.
+
+**Supported report formats:** Analysis archive `.zip`
+
+<Steps>
+  <Step title="Submit the sample">
+    Upload the sample to your VMRay instance and submit it for analysis.
+  </Step>
+  <Step title="Download the analysis archive">
+    Download the analysis archive (a `.zip` file) from the VMRay results page. This archive contains the structured behavioral report that capa parses.
+  </Step>
+  <Step title="Run capa against the archive">
+    capa automatically detects the VMRay format:
+
+    ```bash
+    capa vmray_analysis.zip
+    ```
+
+    Or explicitly specify the backend:
+
+    ```bash
+    capa --backend vmray vmray_analysis.zip
+    ```
+  </Step>
+</Steps>
+
+## Filtering by process
+
+When analyzing a sandbox report that contains many processes, you can restrict capa's analysis to specific process IDs using `--restrict-to-processes`:
+
+```bash
+capa --restrict-to-processes 1234,5678 report.json
+```
+
+This is useful when a report captures the activity of multiple injected or child processes and you want to focus on one in particular.
+
+<Tip>
+Process IDs can be provided as decimal or hex values (e.g., `0x1234`), separated by commas.
+</Tip>
+
+## Benefits of dynamic analysis
+
+- **Handles packed and obfuscated samples** — The sandbox unpacks the code at runtime; capa sees the real behavior.
+- **API-level visibility** — Sandbox reports capture exact API calls with their arguments, giving capa features that are not visible in static disassembly.
+- **No unpacking required** — You do not need to manually unpack the sample before analysis.
+
+<Warning>
+Dynamic analysis depends on the sandbox successfully executing the sample. Some evasive malware may detect the sandbox environment and alter its behavior. For best results, use both static and dynamic analysis.
+</Warning>
+
+## Related
+
+- [Backends Overview](/backends/overview) — Compare all available backends
+- [CLI Reference](/usage/cli-reference) — Full list of command-line flags

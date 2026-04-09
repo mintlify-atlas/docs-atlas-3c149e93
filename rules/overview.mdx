@@ -1,0 +1,171 @@
+---
+title: "Rules overview"
+description: "How capa uses YAML-based rules to identify capabilities in executable files, and how to work with custom rule sets."
+keywords: ["capa rules", "detection rules", "YAML rules", "capa-rules", "rule namespaces", "ATT&CK", "MBC"]
+---
+
+capa uses a collection of rules to identify capabilities within a program. Rules are human-readable YAML files that describe behaviors capa should look for — things like "create a TCP socket", "execute a shell command", or "encode data using XOR".
+
+When a rule matches, capa reports the capability name, its namespace, and any associated ATT&CK or MBC mappings.
+
+## What capa rules are
+
+capa rules are a mixture of concepts drawn from OpenIOC, YARA, and YAML formats. Each rule has two sections:
+
+- **`meta`** — describes the rule: its name, namespace, authors, scope, and threat intelligence mappings.
+- **`features`** — describes what to look for: API calls, strings, numeric constants, byte patterns, behavioral characteristics, and more.
+
+Rules match behaviors, not signatures. A rule might require that a function calls `ws2_32.socket` with specific arguments, rather than matching a byte pattern that could change with each compile.
+
+Here is a complete rule from the standard library:
+
+```yaml
+rule:
+  meta:
+    name: create TCP socket
+    namespace: communication/socket/tcp
+    authors:
+      - william.ballenthin@mandiant.com
+      - joakim@intezer.com
+      - anushka.virgaonkar@mandiant.com
+    scopes:
+      static: basic block
+      dynamic: call
+    mbc:
+      - Communication::Socket Communication::Create TCP Socket [C0001.011]
+    examples:
+      - Practical Malware Analysis Lab 01-01.dll_:0x10001010
+  features:
+    - or:
+      - and:
+        - number: 6 = IPPROTO_TCP
+        - number: 1 = SOCK_STREAM
+        - number: 2 = AF_INET
+        - or:
+          - api: ws2_32.socket
+          - api: ws2_32.WSASocket
+          - api: socket
+      - property/read: System.Net.Sockets.TcpClient::Client
+```
+
+This rule matches a basic block (in static analysis) or a call (in dynamic analysis) where code creates a TCP socket — either by calling the `socket` API with `AF_INET`/`SOCK_STREAM`/`IPPROTO_TCP` arguments, or by reading the `.NET` `TcpClient.Client` property.
+
+## Where rules come from
+
+### Built-in rules
+
+When you download the standalone capa binary, the standard rule library is embedded directly in the executable. Running capa with no `--rules` argument uses this built-in set:
+
+```bash
+capa suspicious.exe
+```
+
+The [capa-rules repository](https://github.com/mandiant/capa-rules) contains hundreds of standard rules covering a broad range of malware behaviors. These rules are versioned alongside capa and distributed with each release.
+
+### Custom rules
+
+You can load rules from a directory on your file system using the `-r`/`--rules` flag:
+
+```bash
+capa --rules /path/to/my/rules suspicious.exe
+```
+
+Reasons to use custom rules include:
+
+- Writing new rules to detect behaviors not covered by the standard library
+- Tweaking existing rules to reduce false positives
+- Maintaining a private rule set that is not shared publicly
+
+You can download the standard rule set as a ZIP or TGZ archive from the [capa-rules releases page](https://github.com/mandiant/capa-rules/releases), then modify or extend the rules locally.
+
+## Rules versioning
+
+The major version of your rules must match the major version of capa. New versions of capa can update rule syntax — for example, adding new fields or logic — so mixing versions may cause errors:
+
+```
+$ capa --rules /path/to/mismatched/rules suspicious.exe
+ERROR:lint:invalid rule: injection.yml: invalid rule: unexpected statement: instruction
+```
+
+Check your capa version with:
+
+```bash
+capa --version
+capa 9.4.0
+```
+
+Then download the matching major version of the rules (e.g., `v9.x` rules for capa `v9.x`).
+
+## Rule namespaces
+
+Every rule belongs to a namespace — a slash-separated path that organizes capabilities into a hierarchy. Namespaces appear in capa's output in the **NAMESPACE** column:
+
+```
++-------------------------------------------+-------------------------------------------------+
+| CAPABILITY                                | NAMESPACE                                       |
+|-------------------------------------------+-------------------------------------------------|
+| execute shell command and capture output  | c2/shell                                        |
+| connect to HTTP server (3 matches)        | communication/http/client                       |
+| encode data using XOR (6 matches)         | data-manipulation/encoding/xor                  |
+| create service                            | host-interaction/service/create                 |
++-------------------------------------------+-------------------------------------------------+
+```
+
+Examples of namespace structure:
+
+| Namespace | Meaning |
+|-----------|---------|
+| `c2/shell` | Command and control — shell execution |
+| `communication/http/client` | HTTP client communication |
+| `communication/socket/tcp` | TCP socket communication |
+| `data-manipulation/encoding/base64` | Base64 encoding |
+| `host-interaction/file-system/write` | Writing files on the host |
+| `persistence/service` | Persistence via Windows services |
+
+You can use namespaces in rules to match all rules under a given path using the `match` feature. For example, `match: communication/http` would match any rule whose namespace starts with `communication/http`.
+
+## Rule tagging
+
+Rules carry structured metadata that maps detected behaviors to threat intelligence frameworks.
+
+### MITRE ATT&CK
+
+Rules can specify one or more ATT&CK techniques:
+
+```yaml
+att&ck:
+  - Execution::Command and Scripting Interpreter::Windows Command Shell [T1059.003]
+  - Persistence::Create or Modify System Process::Windows Service [T1543.003]
+```
+
+capa uses these mappings to populate the ATT&CK table in its output.
+
+### Malware Behavior Catalog (MBC)
+
+Rules can reference MBC behaviors:
+
+```yaml
+mbc:
+  - Communication::Socket Communication::Create TCP Socket [C0001.011]
+```
+
+### MAEC
+
+Rules can include MAEC (Malware Attribute Enumeration and Characterization) metadata:
+
+```yaml
+maec/malware-category: ransomware
+```
+
+## Contributing rules
+
+The capa-rules repository welcomes contributions. If you find an interesting technique while analyzing malware, writing a rule for it helps the whole community.
+
+<CardGroup cols={2}>
+  <Card title="Rule format reference" icon="file-code" href="/rules/rule-format">
+    Complete reference for all rule fields, features, and logic operators
+  </Card>
+  <Card title="Writing rules" icon="pencil" href="/rules/writing-rules">
+    Step-by-step guide to authoring and testing a new rule
+  </Card>
+</CardGroup>
